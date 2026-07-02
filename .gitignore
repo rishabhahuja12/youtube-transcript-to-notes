@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+chapter_segments/
+.agents/
+.system_generated/
+scratch/
+*.log
