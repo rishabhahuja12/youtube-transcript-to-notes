@@ -285,19 +285,127 @@ root.title("YouTube Transcript to Notes Pipeline")
 root.geometry("1200x800")
 root.minsize(1050, 750)
 
-# Global variables for entries
+# Global variables for UI entries
 transcript_path_var = tk.StringVar()
 timestamps_path_var = tk.StringVar()
 output_dir_var = tk.StringVar()
 
-provider_var = tk.StringVar(value="Ollama")
-endpoint_url_var = tk.StringVar(value="http://localhost:11434")
-api_key_var = tk.StringVar()
-model_name_var = tk.StringVar(value="llama3")
-
-# Path to config.json
+# Path resolution
 script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, ".env")
+env_example_path = os.path.join(script_dir, ".env.example")
 config_path = os.path.join(script_dir, "config.json")
+
+def parse_env_file(filepath):
+    """Parse a .env file into a dictionary. Ignores comments and blank lines."""
+    env_vars = {}
+    if not os.path.exists(filepath):
+        return env_vars
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    env_vars[key.strip()] = value.strip()
+    except Exception:
+        pass
+    return env_vars
+
+def get_llm_config():
+    """Load LLM configuration from .env file. Returns (provider, endpoint_url, api_key, model_name)."""
+    env = parse_env_file(env_path)
+    provider = env.get("PROVIDER", "Ollama")
+    endpoint_url = env.get("ENDPOINT_URL", "http://localhost:11434")
+    api_key = env.get("API_KEY", "")
+    model_name = env.get("MODEL_NAME", "llama3")
+    return provider, endpoint_url, api_key, model_name
+
+def check_env_and_show_help():
+    """On first run, if .env is missing or has no MODEL_NAME, show a help popup."""
+    env = parse_env_file(env_path)
+    if not env or not env.get("MODEL_NAME"):
+        # Create .env from .env.example if it doesn't exist
+        if not os.path.exists(env_path) and os.path.exists(env_example_path):
+            try:
+                import shutil
+                shutil.copy2(env_example_path, env_path)
+            except Exception:
+                pass
+        # Show help dialog
+        root.after(500, _show_env_help_popup)
+
+def _show_env_help_popup():
+    """Display a one-time help window explaining how to configure the .env file."""
+    help_win = ctk.CTkToplevel(root)
+    help_win.title("Setup Required")
+    help_win.geometry("620x480")
+    help_win.resizable(False, False)
+    help_win.transient(root)
+    help_win.grab_set()
+    help_win.attributes("-topmost", True)
+
+    ctk.CTkLabel(
+        help_win, text="Welcome! Let's set up your LLM provider.",
+        font=("Segoe UI", 16, "bold"), text_color="#3b82f6"
+    ).pack(pady=(20, 5), padx=20, anchor="w")
+
+    ctk.CTkLabel(
+        help_win,
+        text="This app needs an LLM endpoint to generate notes.\n"
+             "Your credentials are stored locally in a .env file\n"
+             "that is gitignored and never committed.",
+        font=("Segoe UI", 11), text_color="#a1a1aa", justify="left"
+    ).pack(padx=20, anchor="w", pady=(0, 10))
+
+    ctk.CTkLabel(
+        help_win, text=f"Config file location:",
+        font=("Segoe UI", 11, "bold"), text_color="#f4f4f5"
+    ).pack(padx=20, anchor="w")
+
+    path_entry = ctk.CTkEntry(help_win, font=("Consolas", 10), width=560, state="normal")
+    path_entry.pack(padx=20, pady=(2, 10), anchor="w")
+    path_entry.insert(0, env_path)
+    path_entry.configure(state="disabled")
+
+    help_text = (
+        "Open the .env file in any text editor and fill in:\n\n"
+        "  PROVIDER=Ollama                      (or 'OpenAI Compatible')\n"
+        "  ENDPOINT_URL=http://localhost:11434   (your API endpoint)\n"
+        "  API_KEY=                              (leave blank for Ollama)\n"
+        "  MODEL_NAME=llama3                     (your model name)\n\n"
+        "See .env.example for more provider examples (Grok, OpenRouter, Groq).\n"
+        "After editing, restart the app or just click Start."
+    )
+    help_textbox = ctk.CTkTextbox(
+        help_win, font=("Consolas", 11), fg_color="#18181b",
+        text_color="#10b981", height=160, corner_radius=8
+    )
+    help_textbox.pack(padx=20, fill="x")
+    help_textbox.insert("1.0", help_text)
+    help_textbox.configure(state="disabled")
+
+    def open_env_file():
+        """Open .env in the default text editor."""
+        try:
+            os.startfile(env_path)
+        except Exception:
+            log_message(f"Could not auto-open .env. Please open manually: {env_path}")
+
+    btn_frame = ctk.CTkFrame(help_win, fg_color="transparent")
+    btn_frame.pack(pady=15, padx=20, fill="x")
+
+    ctk.CTkButton(
+        btn_frame, text="Open .env File", font=("Segoe UI", 11, "bold"),
+        fg_color="#3f3f46", hover_color="#52525b", command=open_env_file
+    ).pack(side="left", padx=(0, 10))
+
+    ctk.CTkButton(
+        btn_frame, text="Got it, close", font=("Segoe UI", 11, "bold"),
+        fg_color="#3b82f6", hover_color="#2563eb", command=help_win.destroy
+    ).pack(side="right")
 
 # Thread-safe console log
 def log_message(msg):
@@ -308,8 +416,9 @@ def log_message(msg):
         console_text.configure(state="disabled")
     root.after(0, append_log)
 
-# Configuration File Functions
+# Configuration File Functions (file paths only, LLM config lives in .env)
 def load_config():
+    """Load saved file paths from config.json (no LLM credentials stored here)."""
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
@@ -317,34 +426,23 @@ def load_config():
                 transcript_path_var.set(data.get("transcript_path", ""))
                 timestamps_path_var.set(data.get("timestamps_path", ""))
                 output_dir_var.set(data.get("output_dir", ""))
-                provider_var.set(data.get("provider", "Ollama"))
-                endpoint_url_var.set(data.get("endpoint_url", "http://localhost:11434"))
-                api_key_var.set(data.get("api_key", ""))
-                model_name_var.set(data.get("model_name", "llama3"))
         except Exception as e:
-            # We will log this once the console text widget is ready.
             print(f"Error loading configuration: {e}")
 
 def save_config(silent=False):
+    """Save file paths to config.json. LLM credentials are NOT stored here."""
     data = {
         "transcript_path": transcript_path_var.get().strip(),
         "timestamps_path": timestamps_path_var.get().strip(),
-        "output_dir": output_dir_var.get().strip(),
-        "provider": provider_var.get(),
-        "endpoint_url": endpoint_url_var.get().strip(),
-        "api_key": api_key_var.get().strip(),
-        "model_name": model_name_var.get().strip()
+        "output_dir": output_dir_var.get().strip()
     }
     try:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
         if not silent:
-            log_message("Configuration saved successfully to config.json")
-            messagebox.showinfo("Success", "Configuration saved successfully!")
+            log_message("File paths saved to config.json")
     except Exception as e:
         log_message(f"Error saving configuration: {str(e)}")
-        if not silent:
-            messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
 
 # Browse handlers
 def browse_transcript():
@@ -364,17 +462,16 @@ def browse_output_dir():
 
 # Running the pipeline in background thread
 def start_pipeline_thread():
-    # Auto-save configuration on start
+    """Validate inputs, read LLM config from .env, and launch the pipeline thread."""
+    # Auto-save file paths
     save_config(silent=True)
     
     transcript_path = transcript_path_var.get().strip()
     timestamps_path = timestamps_path_var.get().strip()
     output_dir = output_dir_var.get().strip()
     
-    provider = provider_var.get()
-    endpoint_url = endpoint_url_var.get().strip()
-    api_key = api_key_var.get().strip()
-    model_name = model_name_var.get().strip()
+    # Load LLM config from .env
+    provider, endpoint_url, api_key, model_name = get_llm_config()
     
     if not transcript_path or not os.path.exists(transcript_path):
         messagebox.showerror("Validation Error", "Please provide a valid transcript file path.")
@@ -386,10 +483,10 @@ def start_pipeline_thread():
         messagebox.showerror("Validation Error", "Please provide a valid output directory.")
         return
     if not endpoint_url:
-        messagebox.showerror("Validation Error", "Please provide an LLM endpoint URL.")
+        messagebox.showerror("Validation Error", "No ENDPOINT_URL found in .env file. Please configure it.")
         return
     if not model_name:
-        messagebox.showerror("Validation Error", "Please provide an LLM model name.")
+        messagebox.showerror("Validation Error", "No MODEL_NAME found in .env file. Please configure it.")
         return
 
     start_btn.configure(state="disabled", text="Running...")
@@ -652,8 +749,11 @@ def convert_and_save_pdf():
 
     threading.Thread(target=run_conversion, daemon=True).start()
 
-# Load configuration on startup before building UI
+# Load file path configuration on startup
 load_config()
+
+# Check .env and show help if needed
+check_env_and_show_help()
 
 # ----------------- UI Layout Setup -----------------
 
@@ -723,53 +823,73 @@ entry_output.grid(row=2, column=1, sticky="we", pady=6, padx=5)
 btn_browse_out = ctk.CTkButton(files_grid, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_output_dir)
 btn_browse_out.grid(row=2, column=2, sticky="e", pady=6, padx=(5, 0))
 
-# LLM Configuration card
+# LLM Status indicator card (read-only, shows what .env contains)
 llm_card = ctk.CTkFrame(left_container, corner_radius=12, border_width=1, border_color="#3f3f46")
 llm_card.pack(fill="x", pady=10, ipady=5)
 
-llm_title = ctk.CTkLabel(llm_card, text="LLM Configuration", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
-llm_title.pack(anchor="w", padx=15, pady=(12, 8))
+llm_header = ctk.CTkFrame(llm_card, fg_color="transparent")
+llm_header.pack(fill="x", padx=15, pady=(12, 4))
 
-llm_grid = ctk.CTkFrame(llm_card, fg_color="transparent")
-llm_grid.pack(fill="x", padx=15, pady=5)
-llm_grid.grid_columnconfigure(1, weight=1)
+llm_title = ctk.CTkLabel(llm_header, text="LLM Provider", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
+llm_title.pack(side="left")
 
-# Provider OptionMenu
-lbl_provider = ctk.CTkLabel(llm_grid, text="Provider:", font=("Segoe UI", 11, "bold"))
-lbl_provider.grid(row=0, column=0, sticky="w", pady=6, padx=(0, 10))
-provider_menu = ctk.CTkOptionMenu(llm_grid, values=["Ollama", "OpenAI Compatible"], variable=provider_var, font=("Segoe UI", 11))
-provider_menu.grid(row=0, column=1, sticky="w", pady=6, padx=5)
-
-# Endpoint URL
-lbl_endpoint = ctk.CTkLabel(llm_grid, text="Endpoint URL:", font=("Segoe UI", 11, "bold"))
-lbl_endpoint.grid(row=1, column=0, sticky="w", pady=6, padx=(0, 10))
-entry_endpoint = ctk.CTkEntry(llm_grid, textvariable=endpoint_url_var, font=("Segoe UI", 10))
-entry_endpoint.grid(row=1, column=1, columnspan=2, sticky="we", pady=6, padx=5)
-
-# API Key
-lbl_api_key = ctk.CTkLabel(llm_grid, text="API Key (If req):", font=("Segoe UI", 11, "bold"))
-lbl_api_key.grid(row=2, column=0, sticky="w", pady=6, padx=(0, 10))
-entry_api_key = ctk.CTkEntry(llm_grid, textvariable=api_key_var, show="*", font=("Segoe UI", 10), placeholder_text="Enter API key if required...")
-entry_api_key.grid(row=2, column=1, columnspan=2, sticky="we", pady=6, padx=5)
-
-# Model Name
-lbl_model = ctk.CTkLabel(llm_grid, text="Model Name:", font=("Segoe UI", 11, "bold"))
-lbl_model.grid(row=3, column=0, sticky="w", pady=6, padx=(0, 10))
-entry_model = ctk.CTkEntry(llm_grid, textvariable=model_name_var, font=("Segoe UI", 10))
-entry_model.grid(row=3, column=1, columnspan=2, sticky="we", pady=6, padx=5)
-
-# Save Config Button
-btn_save_config = ctk.CTkButton(
-    llm_grid,
-    text="Save Configuration",
-    font=("Segoe UI", 10, "bold"),
-    fg_color="#3f3f46",
-    hover_color="#52525b",
-    text_color="#f4f4f5",
-    width=140,
-    command=lambda: save_config(silent=False)
+btn_edit_env = ctk.CTkButton(
+    llm_header, text="Edit .env", width=80, height=26,
+    font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+    command=lambda: _open_env_in_editor()
 )
-btn_save_config.grid(row=4, column=1, columnspan=2, sticky="e", pady=(10, 5), padx=5)
+btn_edit_env.pack(side="right")
+
+btn_show_help = ctk.CTkButton(
+    llm_header, text="Setup Help", width=90, height=26,
+    font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+    command=lambda: _show_env_help_popup()
+)
+btn_show_help.pack(side="right", padx=(0, 5))
+
+def _open_env_in_editor():
+    """Open .env file in system default text editor."""
+    if not os.path.exists(env_path):
+        # Create from example if missing
+        if os.path.exists(env_example_path):
+            try:
+                import shutil
+                shutil.copy2(env_example_path, env_path)
+            except Exception:
+                pass
+    try:
+        os.startfile(env_path)
+    except Exception:
+        log_message(f"Could not auto-open .env. Open manually: {env_path}")
+
+# Show current .env status
+env_status_frame = ctk.CTkFrame(llm_card, fg_color="#18181b", corner_radius=8)
+env_status_frame.pack(fill="x", padx=15, pady=(4, 12))
+
+def _refresh_env_status():
+    """Refresh the displayed LLM config status from .env."""
+    provider, endpoint, api_key, model = get_llm_config()
+    masked_key = "••••" + api_key[-4:] if len(api_key) > 4 else ("(none)" if not api_key else "••••")
+    status_lines = (
+        f"  Provider:  {provider}\n"
+        f"  Endpoint:  {endpoint}\n"
+        f"  API Key:   {masked_key}\n"
+        f"  Model:     {model}"
+    )
+    env_status_text.configure(state="normal")
+    env_status_text.delete("1.0", tk.END)
+    env_status_text.insert("1.0", status_lines)
+    env_status_text.configure(state="disabled")
+
+env_status_text = ctk.CTkTextbox(
+    env_status_frame, font=("Consolas", 11), fg_color="#18181b",
+    text_color="#a1a1aa", height=80, corner_radius=6, border_width=0
+)
+env_status_text.pack(fill="x", padx=8, pady=8)
+env_status_text.configure(state="disabled")
+
+# Refresh status on startup
+root.after(100, _refresh_env_status)
 
 # Large prominent Start Button
 start_btn = ctk.CTkButton(
@@ -783,6 +903,21 @@ start_btn = ctk.CTkButton(
     command=start_pipeline_thread
 )
 start_btn.pack(fill="x", pady=(15, 5))
+
+# Refresh .env status button under start
+btn_refresh_env = ctk.CTkButton(
+    left_container,
+    text="Refresh LLM Config",
+    font=("Segoe UI", 10),
+    fg_color="transparent",
+    hover_color="#27272a",
+    text_color="#71717a",
+    border_width=1,
+    border_color="#3f3f46",
+    height=30,
+    command=_refresh_env_status
+)
+btn_refresh_env.pack(fill="x", pady=(5, 0))
 
 # Right Side Panel (Console logging pane)
 right_container = ctk.CTkFrame(root, fg_color="transparent")
@@ -852,8 +987,10 @@ btn_convert_pdf = ctk.CTkButton(
 btn_convert_pdf.pack(side="left", padx=5)
 
 # Startup friendly log message
-log_message("System initialized. Configuration loaded (if config.json was present).")
-log_message("Provide files, API details, and click 'Start Processing Pipeline' to begin.")
+provider, endpoint, _, model = get_llm_config()
+log_message("System initialized.")
+log_message(f"LLM Config loaded from .env: {provider} / {model} @ {endpoint}")
+log_message("Select your files and click 'Start Processing Pipeline' to begin.")
 
 if __name__ == "__main__":
     root.mainloop()
