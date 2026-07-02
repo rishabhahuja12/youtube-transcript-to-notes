@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+YouTube Transcript to Notes Pipeline
+=====================================
+Desktop application that parses YouTube transcripts, segments them by chapter
+timestamps, and generates structured revision notes using an LLM provider.
+
+Configuration is loaded from a .env file in the project root.
+See .env.example for setup instructions.
+"""
 import os
 import sys
 import re
