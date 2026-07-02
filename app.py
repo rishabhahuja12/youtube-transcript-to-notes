@@ -939,8 +939,24 @@ right_container.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=10)
 console_card = ctk.CTkFrame(right_container, corner_radius=12, border_width=1, border_color="#3f3f46")
 console_card.pack(fill="both", expand=True)
 
-console_title = ctk.CTkLabel(console_card, text="Console Output", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
-console_title.pack(anchor="w", padx=15, pady=(12, 8))
+console_header = ctk.CTkFrame(console_card, fg_color="transparent")
+console_header.pack(fill="x", padx=15, pady=(12, 8))
+
+console_title = ctk.CTkLabel(console_header, text="Console Output", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
+console_title.pack(side="left")
+
+def clear_console():
+    """Clear all text from the console output."""
+    console_text.configure(state="normal")
+    console_text.delete("1.0", tk.END)
+    console_text.configure(state="disabled")
+
+btn_clear_console = ctk.CTkButton(
+    console_header, text="Clear", width=60, height=26,
+    font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+    command=clear_console
+)
+btn_clear_console.pack(side="right")
 
 console_text = ctk.CTkTextbox(
     console_card,
