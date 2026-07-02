@@ -10,15 +10,7 @@ from tkinter import filedialog, messagebox
 from difflib import SequenceMatcher
 import urllib.request
 import urllib.error
-
-# Modern Styling Constants
-BG_DARK = "#18181b"      # Sleek dark gray
-BG_PANEL = "#27272a"     # Slightly lighter panel background
-FG_LIGHT = "#f4f4f5"     # Clear off-white text
-FG_MUTED = "#a1a1aa"     # Gray muted text
-ACCENT_BLUE = "#3b82f6"  # Premium accent blue
-ACCENT_GREEN = "#10b981" # Success green
-BORDER_COLOR = "#3f3f46" # Panel border
+import customtkinter as ctk
 
 # Parser Regular Expressions
 TIME_RE = r"(?:\d{1,2}(?::\d{2}){1,2}|\d{5,6})"
@@ -283,12 +275,15 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     except Exception as e:
         raise Exception(f"Connection failure: {str(e)}")
 
-# ----------------- UI Application Structure -----------------
+# ----------------- UI Application Setup -----------------
 
-root = tk.Tk()
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+root = ctk.CTk()
 root.title("YouTube Transcript to Notes Pipeline")
-root.geometry("1100x700")
-root.configure(bg=BG_DARK)
+root.geometry("1200x800")
+root.minsize(1050, 750)
 
 # Global variables for entries
 transcript_path_var = tk.StringVar()
@@ -300,40 +295,56 @@ endpoint_url_var = tk.StringVar(value="http://localhost:11434")
 api_key_var = tk.StringVar()
 model_name_var = tk.StringVar(value="llama3")
 
+# Path to config.json
+script_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(script_dir, "config.json")
+
 # Thread-safe console log
 def log_message(msg):
     def append_log():
-        console_text.config(state="normal")
+        console_text.configure(state="normal")
         console_text.insert(tk.END, msg + "\n")
         console_text.see(tk.END)
-        console_text.config(state="disabled")
+        console_text.configure(state="disabled")
     root.after(0, append_log)
 
-# UI Elements Creation Helpers
-def create_entry(parent, textvariable, width=40, show=""):
-    return tk.Entry(
-        parent, textvariable=textvariable, width=width, show=show,
-        bg="#18181b", fg=FG_LIGHT, insertbackground=FG_LIGHT,
-        bd=1, relief="solid", highlightthickness=1,
-        highlightbackground="#3f3f46", highlightcolor=ACCENT_BLUE,
-        font=("Segoe UI", 10)
-    )
+# Configuration File Functions
+def load_config():
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                transcript_path_var.set(data.get("transcript_path", ""))
+                timestamps_path_var.set(data.get("timestamps_path", ""))
+                output_dir_var.set(data.get("output_dir", ""))
+                provider_var.set(data.get("provider", "Ollama"))
+                endpoint_url_var.set(data.get("endpoint_url", "http://localhost:11434"))
+                api_key_var.set(data.get("api_key", ""))
+                model_name_var.set(data.get("model_name", "llama3"))
+        except Exception as e:
+            # We will log this once the console text widget is ready.
+            print(f"Error loading configuration: {e}")
 
-def create_button(parent, text, command, bg="#3f3f46", fg=FG_LIGHT, hover_bg="#52525b", font=("Segoe UI", 9, "bold")):
-    btn = tk.Button(
-        parent, text=text, command=command, bg=bg, fg=fg,
-        activebackground=hover_bg, activeforeground=fg,
-        bd=0, relief="flat", padx=10, pady=5, font=font, cursor="hand2"
-    )
-    def on_enter(e):
-        if btn["state"] != "disabled":
-            btn.config(bg=hover_bg)
-    def on_leave(e):
-        if btn["state"] != "disabled":
-            btn.config(bg=bg)
-    btn.bind("<Enter>", on_enter)
-    btn.bind("<Leave>", on_leave)
-    return btn
+def save_config(silent=False):
+    data = {
+        "transcript_path": transcript_path_var.get().strip(),
+        "timestamps_path": timestamps_path_var.get().strip(),
+        "output_dir": output_dir_var.get().strip(),
+        "provider": provider_var.get(),
+        "endpoint_url": endpoint_url_var.get().strip(),
+        "api_key": api_key_var.get().strip(),
+        "model_name": model_name_var.get().strip()
+    }
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        if not silent:
+            log_message("Configuration saved successfully to config.json")
+            messagebox.showinfo("Success", "Configuration saved successfully!")
+    except Exception as e:
+        log_message(f"Error saving configuration: {str(e)}")
+        if not silent:
+            messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
 
 # Browse handlers
 def browse_transcript():
@@ -353,6 +364,9 @@ def browse_output_dir():
 
 # Running the pipeline in background thread
 def start_pipeline_thread():
+    # Auto-save configuration on start
+    save_config(silent=True)
+    
     transcript_path = transcript_path_var.get().strip()
     timestamps_path = timestamps_path_var.get().strip()
     output_dir = output_dir_var.get().strip()
@@ -378,7 +392,7 @@ def start_pipeline_thread():
         messagebox.showerror("Validation Error", "Please provide an LLM model name.")
         return
 
-    start_btn.config(state="disabled", text="Running...")
+    start_btn.configure(state="disabled", text="Running...")
     
     def process():
         try:
@@ -558,7 +572,7 @@ Make this extremely clean, professional, and directly useful as a high-impact re
             root.after(0, lambda: messagebox.showerror("Pipeline Error", f"An error occurred during processing:\n{str(e)}"))
             
         finally:
-            root.after(0, lambda: start_btn.config(state="normal", text="Start Processing"))
+            root.after(0, lambda: start_btn.configure(state="normal", text="Start Processing Pipeline"))
             
     threading.Thread(target=process, daemon=True).start()
 
@@ -638,131 +652,208 @@ def convert_and_save_pdf():
 
     threading.Thread(target=run_conversion, daemon=True).start()
 
+# Load configuration on startup before building UI
+load_config()
+
 # ----------------- UI Layout Setup -----------------
 
-# Set layout structure
-root.grid_columnconfigure(0, weight=0, minsize=450)
-root.grid_columnconfigure(1, weight=1)
-root.grid_rowconfigure(1, weight=1)
+# Configure main window grid
+root.grid_columnconfigure(0, weight=4) # Left column (Configuration)
+root.grid_columnconfigure(1, weight=5) # Right column (Console log)
+root.grid_rowconfigure(0, weight=0)    # Header
+root.grid_rowconfigure(1, weight=1)    # Content area
+root.grid_rowconfigure(2, weight=0)    # Bottom PDF utility
 
-# Title Header
-header_label = tk.Label(
-    root, text="YouTube Transcript to Revision Notes Generator",
-    font=("Segoe UI", 16, "bold"), bg=BG_DARK, fg=FG_LIGHT, anchor="w", padx=15, pady=10
+# Header Row
+header_frame = ctk.CTkFrame(root, fg_color="transparent")
+header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=20, pady=(15, 5))
+
+header_title = ctk.CTkLabel(
+    header_frame,
+    text="YouTube Transcript to Revision Notes Pipeline",
+    font=("Segoe UI", 20, "bold"),
+    text_color="#f4f4f5"
 )
-header_label.grid(row=0, column=0, columnspan=2, sticky="we")
+header_title.pack(anchor="w")
 
-# Left Column (Configuration Panels)
-left_frame = tk.Frame(root, bg=BG_DARK, padx=10, pady=5)
-left_frame.grid(row=1, column=0, sticky="nsew")
-
-# Right Column (Console Logs)
-right_frame = tk.Frame(root, bg=BG_DARK, padx=10, pady=5)
-right_frame.grid(row=1, column=1, sticky="nsew")
-
-# ---- Panel 1: Files Selection ----
-files_lf = tk.LabelFrame(
-    left_frame, text=" Files Selection ", bg=BG_PANEL, fg=ACCENT_BLUE,
-    font=("Segoe UI", 11, "bold"), bd=1, relief="solid", padx=10, pady=10
+header_subtitle = ctk.CTkLabel(
+    header_frame,
+    text="Segment transcripts by chapter timestamps and leverage AI to build structured markdown and PDF study materials.",
+    font=("Segoe UI", 11),
+    text_color="#a1a1aa"
 )
-files_lf.pack(fill="x", pady=5)
+header_subtitle.pack(anchor="w", pady=(2, 0))
 
-# Transcript path row
-tk.Label(files_lf, text="Transcript Path:", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
-transcript_entry = create_entry(files_lf, transcript_path_var, width=30)
-transcript_entry.grid(row=0, column=1, padx=5, pady=5, sticky="we")
-create_button(files_lf, "Browse", browse_transcript).grid(row=0, column=2, padx=5, pady=5)
+# Left Side Panel (Configuration and File selection)
+left_container = ctk.CTkFrame(root, fg_color="transparent")
+left_container.grid(row=1, column=0, sticky="nsew", padx=(20, 10), pady=10)
 
-# Timestamps path row
-tk.Label(files_lf, text="Timestamps Path:", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
-timestamps_entry = create_entry(files_lf, timestamps_path_var, width=30)
-timestamps_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
-create_button(files_lf, "Browse", browse_timestamps).grid(row=1, column=2, padx=5, pady=5)
+# Files card
+files_card = ctk.CTkFrame(left_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+files_card.pack(fill="x", pady=(0, 10), ipady=5)
 
-# Output directory row
-tk.Label(files_lf, text="Output Directory:", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=5)
-output_entry = create_entry(files_lf, output_dir_var, width=30)
-output_entry.grid(row=2, column=1, padx=5, pady=5, sticky="we")
-create_button(files_lf, "Browse", browse_output_dir).grid(row=2, column=2, padx=5, pady=5)
+files_title = ctk.CTkLabel(files_card, text="Files & Output Selection", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
+files_title.pack(anchor="w", padx=15, pady=(12, 8))
 
-files_lf.grid_columnconfigure(1, weight=1)
+files_grid = ctk.CTkFrame(files_card, fg_color="transparent")
+files_grid.pack(fill="x", padx=15, pady=5)
+files_grid.grid_columnconfigure(1, weight=1)
 
-# ---- Panel 2: LLM Configuration ----
-llm_lf = tk.LabelFrame(
-    left_frame, text=" LLM Configuration ", bg=BG_PANEL, fg=ACCENT_BLUE,
-    font=("Segoe UI", 11, "bold"), bd=1, relief="solid", padx=10, pady=10
-)
-llm_lf.pack(fill="x", pady=5)
+# Transcript path
+lbl_transcript = ctk.CTkLabel(files_grid, text="Transcript File:", font=("Segoe UI", 11, "bold"))
+lbl_transcript.grid(row=0, column=0, sticky="w", pady=6, padx=(0, 10))
+entry_transcript = ctk.CTkEntry(files_grid, textvariable=transcript_path_var, font=("Segoe UI", 10), placeholder_text="Select transcript file...")
+entry_transcript.grid(row=0, column=1, sticky="we", pady=6, padx=5)
+btn_browse_trans = ctk.CTkButton(files_grid, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_transcript)
+btn_browse_trans.grid(row=0, column=2, sticky="e", pady=6, padx=(5, 0))
 
-# Provider
-tk.Label(llm_lf, text="Provider:", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
-provider_menu = tk.OptionMenu(llm_lf, provider_var, "Ollama", "OpenAI Compatible")
-provider_menu.config(
-    bg="#18181b", fg=FG_LIGHT, activebackground="#27272a", activeforeground=FG_LIGHT,
-    bd=1, relief="solid", font=("Segoe UI", 9), highlightthickness=0
-)
-provider_menu["menu"].config(bg="#18181b", fg=FG_LIGHT, activebackground=ACCENT_BLUE)
-provider_menu.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+# Timestamps path
+lbl_timestamps = ctk.CTkLabel(files_grid, text="Timestamps File:", font=("Segoe UI", 11, "bold"))
+lbl_timestamps.grid(row=1, column=0, sticky="w", pady=6, padx=(0, 10))
+entry_timestamps = ctk.CTkEntry(files_grid, textvariable=timestamps_path_var, font=("Segoe UI", 10), placeholder_text="Select timestamps file...")
+entry_timestamps.grid(row=1, column=1, sticky="we", pady=6, padx=5)
+btn_browse_times = ctk.CTkButton(files_grid, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_timestamps)
+btn_browse_times.grid(row=1, column=2, sticky="e", pady=6, padx=(5, 0))
+
+# Output directory
+lbl_output = ctk.CTkLabel(files_grid, text="Output Directory:", font=("Segoe UI", 11, "bold"))
+lbl_output.grid(row=2, column=0, sticky="w", pady=6, padx=(0, 10))
+entry_output = ctk.CTkEntry(files_grid, textvariable=output_dir_var, font=("Segoe UI", 10), placeholder_text="Select output directory...")
+entry_output.grid(row=2, column=1, sticky="we", pady=6, padx=5)
+btn_browse_out = ctk.CTkButton(files_grid, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_output_dir)
+btn_browse_out.grid(row=2, column=2, sticky="e", pady=6, padx=(5, 0))
+
+# LLM Configuration card
+llm_card = ctk.CTkFrame(left_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+llm_card.pack(fill="x", pady=10, ipady=5)
+
+llm_title = ctk.CTkLabel(llm_card, text="LLM Configuration", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
+llm_title.pack(anchor="w", padx=15, pady=(12, 8))
+
+llm_grid = ctk.CTkFrame(llm_card, fg_color="transparent")
+llm_grid.pack(fill="x", padx=15, pady=5)
+llm_grid.grid_columnconfigure(1, weight=1)
+
+# Provider OptionMenu
+lbl_provider = ctk.CTkLabel(llm_grid, text="Provider:", font=("Segoe UI", 11, "bold"))
+lbl_provider.grid(row=0, column=0, sticky="w", pady=6, padx=(0, 10))
+provider_menu = ctk.CTkOptionMenu(llm_grid, values=["Ollama", "OpenAI Compatible"], variable=provider_var, font=("Segoe UI", 11))
+provider_menu.grid(row=0, column=1, sticky="w", pady=6, padx=5)
 
 # Endpoint URL
-tk.Label(llm_lf, text="Endpoint URL:", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
-endpoint_entry = create_entry(llm_lf, endpoint_url_var, width=40)
-endpoint_entry.grid(row=1, column=1, padx=5, pady=5, sticky="we")
+lbl_endpoint = ctk.CTkLabel(llm_grid, text="Endpoint URL:", font=("Segoe UI", 11, "bold"))
+lbl_endpoint.grid(row=1, column=0, sticky="w", pady=6, padx=(0, 10))
+entry_endpoint = ctk.CTkEntry(llm_grid, textvariable=endpoint_url_var, font=("Segoe UI", 10))
+entry_endpoint.grid(row=1, column=1, columnspan=2, sticky="we", pady=6, padx=5)
 
 # API Key
-tk.Label(llm_lf, text="API Key (if req):", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=5)
-api_key_entry = create_entry(llm_lf, api_key_var, width=40, show="*")
-api_key_entry.grid(row=2, column=1, padx=5, pady=5, sticky="we")
+lbl_api_key = ctk.CTkLabel(llm_grid, text="API Key (If req):", font=("Segoe UI", 11, "bold"))
+lbl_api_key.grid(row=2, column=0, sticky="w", pady=6, padx=(0, 10))
+entry_api_key = ctk.CTkEntry(llm_grid, textvariable=api_key_var, show="*", font=("Segoe UI", 10), placeholder_text="Enter API key if required...")
+entry_api_key.grid(row=2, column=1, columnspan=2, sticky="we", pady=6, padx=5)
 
 # Model Name
-tk.Label(llm_lf, text="Model Name:", bg=BG_PANEL, fg=FG_LIGHT, font=("Segoe UI", 9, "bold")).grid(row=3, column=0, sticky="w", pady=5)
-model_entry = create_entry(llm_lf, model_name_var, width=40)
-model_entry.grid(row=3, column=1, padx=5, pady=5, sticky="we")
+lbl_model = ctk.CTkLabel(llm_grid, text="Model Name:", font=("Segoe UI", 11, "bold"))
+lbl_model.grid(row=3, column=0, sticky="w", pady=6, padx=(0, 10))
+entry_model = ctk.CTkEntry(llm_grid, textvariable=model_name_var, font=("Segoe UI", 10))
+entry_model.grid(row=3, column=1, columnspan=2, sticky="we", pady=6, padx=5)
 
-llm_lf.grid_columnconfigure(1, weight=1)
-
-# ---- Panel 3: MD-to-PDF Conversion ----
-pdf_lf = tk.LabelFrame(
-    left_frame, text=" MD-to-PDF Conversion ", bg=BG_PANEL, fg=ACCENT_BLUE,
-    font=("Segoe UI", 11, "bold"), bd=1, relief="solid", padx=10, pady=10
+# Save Config Button
+btn_save_config = ctk.CTkButton(
+    llm_grid,
+    text="Save Configuration",
+    font=("Segoe UI", 10, "bold"),
+    fg_color="#3f3f46",
+    hover_color="#52525b",
+    text_color="#f4f4f5",
+    width=140,
+    command=lambda: save_config(silent=False)
 )
-pdf_lf.pack(fill="x", pady=5)
+btn_save_config.grid(row=4, column=1, columnspan=2, sticky="e", pady=(10, 5), padx=5)
 
-btn_install_pdf = create_button(pdf_lf, "Install PDF Library", install_pdf_library, bg="#3f3f46", hover_bg="#52525b")
-btn_install_pdf.grid(row=0, column=0, padx=5, pady=5, sticky="we")
-
-btn_convert_pdf = create_button(pdf_lf, "Convert & Save PDF", convert_and_save_pdf, bg="#3f3f46", hover_bg="#52525b")
-btn_convert_pdf.grid(row=0, column=1, padx=5, pady=5, sticky="we")
-
-pdf_lf.grid_columnconfigure(0, weight=1)
-pdf_lf.grid_columnconfigure(1, weight=1)
-
-# Start Execution Button
-start_btn = create_button(
-    left_frame, "Start Processing Pipeline", start_pipeline_thread,
-    bg=ACCENT_BLUE, hover_bg="#2563eb", font=("Segoe UI", 11, "bold")
+# Large prominent Start Button
+start_btn = ctk.CTkButton(
+    left_container,
+    text="Start Processing Pipeline",
+    font=("Segoe UI", 13, "bold"),
+    fg_color="#10b981",
+    hover_color="#059669",
+    text_color="#ffffff",
+    height=45,
+    command=start_pipeline_thread
 )
-start_btn.pack(fill="x", pady=15, ipady=5)
+start_btn.pack(fill="x", pady=(15, 5))
 
-# ---- Panel 4: Console Logs ----
-console_lf = tk.LabelFrame(
-    right_frame, text=" Console Logs ", bg=BG_PANEL, fg=ACCENT_BLUE,
-    font=("Segoe UI", 11, "bold"), bd=1, relief="solid", padx=10, pady=10
+# Right Side Panel (Console logging pane)
+right_container = ctk.CTkFrame(root, fg_color="transparent")
+right_container.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=10)
+
+console_card = ctk.CTkFrame(right_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+console_card.pack(fill="both", expand=True)
+
+console_title = ctk.CTkLabel(console_card, text="Console Output", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
+console_title.pack(anchor="w", padx=15, pady=(12, 8))
+
+console_text = ctk.CTkTextbox(
+    console_card,
+    fg_color="#09090b",
+    text_color="#10b981",
+    font=("Consolas", 11),
+    border_width=0,
+    corner_radius=8
 )
-console_lf.pack(fill="both", expand=True)
+console_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+console_text.configure(state="disabled")
 
-console_text = tk.Text(
-    console_lf, bg="#09090b", fg=ACCENT_GREEN, insertbackground=ACCENT_GREEN,
-    font=("Consolas", 10), bd=0, wrap="word", state="disabled"
+# Bottom Panel (Markdown-to-PDF utility)
+pdf_card = ctk.CTkFrame(root, corner_radius=12, border_width=1, border_color="#3f3f46")
+pdf_card.grid(row=2, column=0, columnspan=2, sticky="ew", padx=20, pady=(10, 20), ipady=5)
+
+pdf_card.grid_columnconfigure(0, weight=1)
+pdf_card.grid_columnconfigure(1, weight=0)
+
+pdf_info_frame = ctk.CTkFrame(pdf_card, fg_color="transparent")
+pdf_info_frame.grid(row=0, column=0, sticky="w", padx=20, pady=10)
+
+pdf_title = ctk.CTkLabel(pdf_info_frame, text="Markdown-to-PDF Utility", font=("Segoe UI", 13, "bold"), text_color="#3b82f6")
+pdf_title.pack(anchor="w")
+
+pdf_desc = ctk.CTkLabel(
+    pdf_info_frame,
+    text="Convert the generated Markdown study guides to premium styled PDF documents. Make sure the library is installed.",
+    font=("Segoe UI", 10),
+    text_color="#a1a1aa"
 )
-console_text.pack(side="left", fill="both", expand=True)
+pdf_desc.pack(anchor="w", pady=(2, 0))
 
-scrollbar = tk.Scrollbar(console_lf, command=console_text.yview)
-scrollbar.pack(side="right", fill="y")
-console_text.config(yscrollcommand=scrollbar.set)
+pdf_btn_frame = ctk.CTkFrame(pdf_card, fg_color="transparent")
+pdf_btn_frame.grid(row=0, column=1, sticky="e", padx=20, pady=10)
+
+btn_install_pdf = ctk.CTkButton(
+    pdf_btn_frame,
+    text="Install PDF Library",
+    font=("Segoe UI", 11, "bold"),
+    fg_color="#3f3f46",
+    hover_color="#52525b",
+    text_color="#f4f4f5",
+    command=install_pdf_library
+)
+btn_install_pdf.pack(side="left", padx=5)
+
+btn_convert_pdf = ctk.CTkButton(
+    pdf_btn_frame,
+    text="Convert & Save PDF",
+    font=("Segoe UI", 11, "bold"),
+    fg_color="#3b82f6",
+    hover_color="#2563eb",
+    text_color="#ffffff",
+    command=convert_and_save_pdf
+)
+btn_convert_pdf.pack(side="left", padx=5)
 
 # Startup friendly log message
-log_message("System initialized. Fill in the paths and parameters, and press Start.")
+log_message("System initialized. Configuration loaded (if config.json was present).")
+log_message("Provide files, API details, and click 'Start Processing Pipeline' to begin.")
 
 if __name__ == "__main__":
     root.mainloop()
