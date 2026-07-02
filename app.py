@@ -21,6 +21,10 @@ import urllib.request
 import urllib.error
 import customtkinter as ctk
 
+# Application Constants
+APP_VERSION = "1.0.0"
+LLM_TIMEOUT_SECONDS = 180  # Max seconds to wait for a single LLM response
+
 # Parser Regular Expressions
 TIME_RE = r"(?:\d{1,2}(?::\d{2}){1,2}|\d{5,6})"
 
@@ -268,7 +272,7 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     )
     
     try:
-        with urllib.request.urlopen(req, timeout=120) as response:
+        with urllib.request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             if "choices" in res_data:
                 return res_data["choices"][0]["message"]["content"]
@@ -290,7 +294,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 root = ctk.CTk()
-root.title("YouTube Transcript to Notes Pipeline")
+root.title(f"YouTube Transcript to Notes Pipeline v{APP_VERSION}")
 root.geometry("1200x800")
 root.minsize(1050, 750)
 
