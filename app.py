@@ -92,11 +92,18 @@ def add_recent_output(path):
 
 def save_config(transcript_var, timestamps_var, output_var):
     """Persist file paths to config.json (no credentials stored here)."""
-    data = {
-        "transcript_path": transcript_var.get().strip(),
-        "timestamps_path": timestamps_var.get().strip(),
-        "output_dir": output_var.get().strip(),
-    }
+    data = {}
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+    except Exception:
+        pass
+
+    data["transcript_path"] = transcript_var.get().strip()
+    data["timestamps_path"] = timestamps_var.get().strip()
+    data["output_dir"] = output_var.get().strip()
+
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
@@ -502,8 +509,8 @@ def main():
         output_dir = output_dir_var.get().strip()
         
         try:
-            from src.credentials import get_credentials
-            provider, endpoint_url, api_key, model_name = get_credentials()
+            from src.credentials import get_llm_config_from_keyring
+            provider, endpoint_url, api_key, model_name = get_llm_config_from_keyring()
             if not endpoint_url or not model_name:
                 raise ValueError("Incomplete credentials")
         except Exception:
