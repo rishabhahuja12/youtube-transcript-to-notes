@@ -298,6 +298,9 @@ root.title(f"YouTube Transcript to Notes Pipeline v{APP_VERSION}")
 root.geometry("1200x800")
 root.minsize(1050, 750)
 
+# Global variables
+cancel_event = threading.Event()
+
 # Global variables for UI entries
 transcript_path_var = tk.StringVar()
 timestamps_path_var = tk.StringVar()
@@ -502,7 +505,10 @@ def start_pipeline_thread():
         messagebox.showerror("Validation Error", "No MODEL_NAME found in .env file. Please configure it.")
         return
 
-    start_btn.configure(state="disabled", text="Running...")
+    cancel_event.clear()
+    start_btn.pack_forget()
+    cancel_btn.configure(state="normal", text="Cancel Pipeline")
+    cancel_btn.pack(fill="x", side="bottom")
     
     def process():
         try:
@@ -554,7 +560,10 @@ def start_pipeline_thread():
                 word_count = len(ch_text.split())
                 
                 log_message(f"Processing Chapter {idx+1}/{len(chapters)}: '{title}' ({word_count} words)...")
-                
+                if cancel_event.is_set():
+                    log_message("Pipeline cancelled by user.")
+                    break
+                    
                 user_prompt = f"""You are generating revision notes for Chapter {idx+1}: "{title}"
 Section: {section}
 Start Time: {time_str}
@@ -704,7 +713,10 @@ Make this extremely clean, professional, and directly useful as a high-impact re
             root.after(0, lambda: messagebox.showerror("Pipeline Error", f"An error occurred during processing:\n{str(e)}"))
             
         finally:
-            root.after(0, lambda: start_btn.configure(state="normal", text="Start Processing Pipeline"))
+            def restore_ui():
+                cancel_btn.pack_forget()
+                start_btn.pack(fill="x", side="bottom")
+            root.after(0, restore_ui)
             
     threading.Thread(target=process, daemon=True).start()
 
@@ -908,6 +920,24 @@ start_btn = ctk.CTkButton(
     command=start_pipeline_thread
 )
 start_btn.pack(fill="x", side="bottom")
+
+def cancel_pipeline():
+    if messagebox.askyesno("Confirm Cancel", "Are you sure you want to cancel the pipeline?"):
+        log_message("Cancel requested. Waiting for current chapter to finish...")
+        cancel_btn.configure(state="disabled", text="Cancelling...")
+        cancel_event.set()
+
+cancel_btn = ctk.CTkButton(
+    actions_inner,
+    text="Cancel Pipeline",
+    font=("Segoe UI", 13, "bold"),
+    fg_color="#ef4444",
+    hover_color="#dc2626",
+    text_color="#ffffff",
+    height=45,
+    command=cancel_pipeline
+)
+# Intentionally not packed yet; swapped with start_btn dynamically.
 
 # Console logging pane (Full width below top container)
 console_card = ctk.CTkFrame(root, corner_radius=12, border_width=1, border_color="#3f3f46")
