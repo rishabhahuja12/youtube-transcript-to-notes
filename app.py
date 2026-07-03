@@ -251,24 +251,54 @@ def convert_and_save_pdf(log_fn, root):
                 md_content = f.read()
 
             custom_css = """
-            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
-            h1, h2, h3, h4, h5, h6 { 
-                page-break-after: avoid; 
-                break-after: avoid; 
-                color: #1f2937; 
+            body { font-family: 'Segoe UI', Helvetica, sans-serif; line-height: 1.5; color: #1f2937; }
+            h1 {
+                page-break-before: always;
+                color: #1e3a8a;
+                font-size: 28pt;
+                border-bottom: 3px solid #3b82f6;
+                padding-bottom: 6px;
+                margin-top: 1em;
+            }
+            /* The very first h1 shouldn't have a page break if possible, but PyMuPDF usually ignores it on page 1 */
+            h2 { 
+                page-break-before: always;
+                color: #2563eb; 
+                font-size: 20pt; 
+                border-bottom: 1px solid #d1d5db;
+                padding-bottom: 4px;
                 margin-top: 1.5em; 
             }
-            p, li { page-break-inside: avoid; break-inside: avoid; }
-            pre, blockquote, table, img { 
-                page-break-inside: avoid; 
-                break-inside: avoid; 
+            h3 { color: #047857; font-size: 16pt; margin-top: 1.2em; }
+            h4 { color: #6d28d9; font-size: 14pt; }
+            p { margin-bottom: 1em; }
+            li { margin-bottom: 0.5em; }
+            pre { 
+                background-color: #f8fafc; 
+                padding: 12px; 
+                border-left: 4px solid #94a3b8;
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 10pt;
+                white-space: pre-wrap;
             }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
-            th, td { border: 1px solid #d1d5db; padding: 8px 12px; }
-            th { background-color: #f3f4f6; font-weight: bold; }
+            code { 
+                background-color: #f1f5f9; 
+                color: #be123c; 
+                padding: 2px 5px; 
+                font-family: 'Courier New', Courier, monospace;
+            }
+            blockquote { 
+                border-left: 4px solid #3b82f6; 
+                background-color: #eff6ff;
+                padding: 10px 15px; 
+                color: #4b5563; 
+                font-style: italic; 
+            }
+            table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+            th { background-color: #e2e8f0; font-weight: bold; padding: 10px; border: 1px solid #cbd5e1; color: #0f172a; text-align: left; }
+            td { padding: 10px; border: 1px solid #cbd5e1; }
+            tr:nth-child(even) { background-color: #f8fafc; }
             a { color: #2563eb; text-decoration: none; }
-            pre { background-color: #f8f9fa; padding: 12px; border-radius: 6px; }
-            code { background-color: #f3f4f6; padding: 2px 4px; border-radius: 4px; font-family: Consolas, monospace; font-size: 0.9em; }
             """
 
             pdf = MarkdownPdf(toc_level=2, optimize=True)
