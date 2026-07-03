@@ -249,8 +249,30 @@ def convert_and_save_pdf(log_fn, root):
                 raise Exception("The 'markdown-pdf' library is not available. Please click 'Install PDF Library' first.")
             with open(md_file, "r", encoding="utf-8", errors="replace") as f:
                 md_content = f.read()
+
+            custom_css = """
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+            h1, h2, h3, h4, h5, h6 { 
+                page-break-after: avoid; 
+                break-after: avoid; 
+                color: #1f2937; 
+                margin-top: 1.5em; 
+            }
+            p, li { page-break-inside: avoid; break-inside: avoid; }
+            pre, blockquote, table, img { 
+                page-break-inside: avoid; 
+                break-inside: avoid; 
+            }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+            th, td { border: 1px solid #d1d5db; padding: 8px 12px; }
+            th { background-color: #f3f4f6; font-weight: bold; }
+            a { color: #2563eb; text-decoration: none; }
+            pre { background-color: #f8f9fa; padding: 12px; border-radius: 6px; }
+            code { background-color: #f3f4f6; padding: 2px 4px; border-radius: 4px; font-family: Consolas, monospace; font-size: 0.9em; }
+            """
+
             pdf = MarkdownPdf(toc_level=2, optimize=True)
-            pdf.add_section(Section(md_content, toc=True))
+            pdf.add_section(Section(md_content, toc=True), user_css=custom_css)
             pdf.save(pdf_file)
             log_fn(f"SUCCESS: Saved PDF to {pdf_file}")
             root.after(0, lambda: messagebox.showinfo("Success", f"PDF saved successfully to:\n{pdf_file}"))
