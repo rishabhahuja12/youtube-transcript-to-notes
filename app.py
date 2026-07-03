@@ -771,11 +771,11 @@ check_env_and_show_help()
 # ----------------- UI Layout Setup -----------------
 
 # Configure main window grid
-root.grid_columnconfigure(0, weight=4) # Left column (Configuration)
-root.grid_columnconfigure(1, weight=5) # Right column (Console log)
+root.grid_columnconfigure(0, weight=1) # Single column layout
 root.grid_rowconfigure(0, weight=0)    # Header
-root.grid_rowconfigure(1, weight=1)    # Content area
-root.grid_rowconfigure(2, weight=0)    # Bottom PDF utility
+root.grid_rowconfigure(1, weight=0)    # Top panel (Files & Actions)
+root.grid_rowconfigure(2, weight=1)    # Console area (expanding)
+root.grid_rowconfigure(3, weight=0)    # Bottom PDF utility
 
 # Header Row
 header_frame = ctk.CTkFrame(root, fg_color="transparent")
@@ -797,13 +797,17 @@ header_subtitle = ctk.CTkLabel(
 )
 header_subtitle.pack(anchor="w", pady=(2, 0))
 
-# Left Side Panel (Configuration and File selection)
-left_container = ctk.CTkFrame(root, fg_color="transparent")
-left_container.grid(row=1, column=0, sticky="nsew", padx=(20, 10), pady=10)
+# Top Panel (Configuration, Files, and Actions)
+top_container = ctk.CTkFrame(root, fg_color="transparent")
+top_container.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 10))
+
+# Configure top container to have two columns: Files on left, Actions on right
+top_container.grid_columnconfigure(0, weight=3)
+top_container.grid_columnconfigure(1, weight=1)
 
 # Files card
-files_card = ctk.CTkFrame(left_container, corner_radius=12, border_width=1, border_color="#3f3f46")
-files_card.pack(fill="x", pady=(0, 10), ipady=5)
+files_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+files_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
 files_title = ctk.CTkLabel(files_card, text="Files & Output Selection", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
 files_title.pack(anchor="w", padx=15, pady=(12, 8))
@@ -837,33 +841,28 @@ btn_browse_out = ctk.CTkButton(files_grid, text="Browse", width=80, font=("Segoe
 btn_browse_out.grid(row=2, column=2, sticky="e", pady=6, padx=(5, 0))
 
 # LLM Status indicator card (read-only, shows what .env contains)
-llm_card = ctk.CTkFrame(left_container, corner_radius=12, border_width=1, border_color="#3f3f46")
-llm_card.pack(fill="x", pady=10, ipady=5)
+# Actions Card (Right side of top container)
+actions_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+actions_card.grid(row=0, column=1, sticky="nsew")
 
-llm_header = ctk.CTkFrame(llm_card, fg_color="transparent")
-llm_header.pack(fill="x", padx=15, pady=(12, 4))
+actions_title = ctk.CTkLabel(actions_card, text="Pipeline Controls", font=("Segoe UI", 14, "bold"), text_color="#10b981")
+actions_title.pack(anchor="w", padx=15, pady=(12, 8))
 
-llm_title = ctk.CTkLabel(llm_header, text="LLM Provider", font=("Segoe UI", 14, "bold"), text_color="#3b82f6")
-llm_title.pack(side="left")
+actions_inner = ctk.CTkFrame(actions_card, fg_color="transparent")
+actions_inner.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
+# LLM Configuration Access
 btn_edit_env = ctk.CTkButton(
-    llm_header, text="Edit .env", width=80, height=26,
-    font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+    actions_inner, text="Edit LLM Config (.env)",
+    font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+    height=35,
     command=lambda: _open_env_in_editor()
 )
-btn_edit_env.pack(side="right")
-
-btn_show_help = ctk.CTkButton(
-    llm_header, text="Setup Help", width=90, height=26,
-    font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
-    command=lambda: _show_env_help_popup()
-)
-btn_show_help.pack(side="right", padx=(0, 5))
+btn_edit_env.pack(fill="x", pady=(10, 15))
 
 def _open_env_in_editor():
     """Open .env file in system default text editor."""
     if not os.path.exists(env_path):
-        # Create from example if missing
         if os.path.exists(env_example_path):
             try:
                 import shutil
@@ -875,39 +874,10 @@ def _open_env_in_editor():
     except Exception:
         log_message(f"Could not auto-open .env. Open manually: {env_path}")
 
-# Show current .env status
-env_status_frame = ctk.CTkFrame(llm_card, fg_color="#18181b", corner_radius=8)
-env_status_frame.pack(fill="x", padx=15, pady=(4, 12))
-
-def _refresh_env_status():
-    """Refresh the displayed LLM config status from .env."""
-    provider, endpoint, api_key, model = get_llm_config()
-    masked_key = "••••" + api_key[-4:] if len(api_key) > 4 else ("(none)" if not api_key else "••••")
-    status_lines = (
-        f"  Provider:  {provider}\n"
-        f"  Endpoint:  {endpoint}\n"
-        f"  API Key:   {masked_key}\n"
-        f"  Model:     {model}"
-    )
-    env_status_text.configure(state="normal")
-    env_status_text.delete("1.0", tk.END)
-    env_status_text.insert("1.0", status_lines)
-    env_status_text.configure(state="disabled")
-
-env_status_text = ctk.CTkTextbox(
-    env_status_frame, font=("Consolas", 11), fg_color="#18181b",
-    text_color="#a1a1aa", height=80, corner_radius=6, border_width=0
-)
-env_status_text.pack(fill="x", padx=8, pady=8)
-env_status_text.configure(state="disabled")
-
-# Refresh status on startup
-root.after(100, _refresh_env_status)
-
-# Large prominent Start Button
+# Large prominent Start Button (Pushed to bottom of actions card)
 start_btn = ctk.CTkButton(
-    left_container,
-    text="Start Processing Pipeline",
+    actions_inner,
+    text="Start Pipeline",
     font=("Segoe UI", 13, "bold"),
     fg_color="#10b981",
     hover_color="#059669",
@@ -915,29 +885,11 @@ start_btn = ctk.CTkButton(
     height=45,
     command=start_pipeline_thread
 )
-start_btn.pack(fill="x", pady=(15, 5))
+start_btn.pack(fill="x", side="bottom")
 
-# Refresh .env status button under start
-btn_refresh_env = ctk.CTkButton(
-    left_container,
-    text="Refresh LLM Config",
-    font=("Segoe UI", 10),
-    fg_color="transparent",
-    hover_color="#27272a",
-    text_color="#71717a",
-    border_width=1,
-    border_color="#3f3f46",
-    height=30,
-    command=_refresh_env_status
-)
-btn_refresh_env.pack(fill="x", pady=(5, 0))
-
-# Right Side Panel (Console logging pane)
-right_container = ctk.CTkFrame(root, fg_color="transparent")
-right_container.grid(row=1, column=1, sticky="nsew", padx=(10, 20), pady=10)
-
-console_card = ctk.CTkFrame(right_container, corner_radius=12, border_width=1, border_color="#3f3f46")
-console_card.pack(fill="both", expand=True)
+# Console logging pane (Full width below top container)
+console_card = ctk.CTkFrame(root, corner_radius=12, border_width=1, border_color="#3f3f46")
+console_card.grid(row=2, column=0, sticky="nsew", padx=20, pady=10)
 
 console_header = ctk.CTkFrame(console_card, fg_color="transparent")
 console_header.pack(fill="x", padx=15, pady=(12, 8))
@@ -971,7 +923,7 @@ console_text.configure(state="disabled")
 
 # Bottom Panel (Markdown-to-PDF utility)
 pdf_card = ctk.CTkFrame(root, corner_radius=12, border_width=1, border_color="#3f3f46")
-pdf_card.grid(row=2, column=0, columnspan=2, sticky="ew", padx=20, pady=(10, 20), ipady=5)
+pdf_card.grid(row=3, column=0, sticky="ew", padx=20, pady=(10, 20), ipady=5)
 
 pdf_card.grid_columnconfigure(0, weight=1)
 pdf_card.grid_columnconfigure(1, weight=0)
