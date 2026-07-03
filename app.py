@@ -225,9 +225,9 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     """Make raw POST HTTP call to Ollama or OpenAI compatible endpoint."""
     url = endpoint_url.strip()
     headers = {
-        "Content-Type": "application/json"
-    }
-    
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }    
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
