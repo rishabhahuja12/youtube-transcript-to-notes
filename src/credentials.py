@@ -44,6 +44,12 @@ def store_credential(key: str, value: str) -> bool:
     if kr is None:
         return False
     try:
+        if not value:
+            try:
+                kr.delete_password(SERVICE_NAME, key)
+            except Exception:
+                pass
+            return True
         kr.set_password(SERVICE_NAME, key, value)
         return True
     except Exception:
