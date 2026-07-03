@@ -6,6 +6,7 @@ app.py.  It is completely UI-independent: no tkinter imports, no global
 variables.  All feedback is delivered through caller-supplied callbacks.
 """
 import os
+import json
 import threading
 
 from src.parser import (
@@ -15,7 +16,13 @@ from src.parser import (
     dedupe_merge,
     assign_chapters,
 )
-from src.llm_client import call_llm
+from src.llm_client import (
+    call_llm,
+    AdaptiveRateLimiter,
+    estimate_tokens,
+    estimate_pipeline_time,
+    get_rate_limit_info,
+)
 
 
 def run_pipeline(
@@ -174,8 +181,29 @@ def _run_llm_pipeline(
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
     detailed_path = ""
     practical_path = ""
+    checkpoint_path = os.path.join(output_dir, ".checkpoint.json")
 
     try:
+        # --- Pre-flight estimation ---
+        total_words = sum(len(" ".join(chapter_texts[i]).split()) for i in range(len(chapters)))
+        estimate = estimate_pipeline_time(total_words, len(chapters), provider)
+        on_log(f"Rate limits: {get_rate_limit_info(provider)}")
+        on_log(estimate["info"])
+
+        # --- Create rate limiter ---
+        limiter = AdaptiveRateLimiter.for_provider(provider)
+
+        # --- Load checkpoint if exists ---
+        completed_notes = {}
+        if os.path.exists(checkpoint_path):
+            try:
+                with open(checkpoint_path, "r", encoding="utf-8") as f:
+                    checkpoint = json.load(f)
+                completed_notes = checkpoint.get("completed_notes", {})
+                if completed_notes:
+                    on_log(f"\u2705 Resuming from checkpoint: {len(completed_notes)}/{len(chapters)} chapters already done.")
+            except Exception:
+                pass
 
         # ------------------------------------------------------------------
         # Step 3: Call LLM for each chapter
@@ -191,14 +219,21 @@ def _run_llm_pipeline(
             ch_text = " ".join(chapter_texts[idx]).strip()
             word_count = len(ch_text.split())
 
+            if cancel_event.is_set():
+                on_log("Pipeline cancelled by user.")
+                break
+
+            # Check checkpoint — skip if already done
+            if str(idx) in completed_notes:
+                on_log(f"Chapter {idx + 1}/{total_chapters}: '{title}' — already done (checkpoint), skipping.")
+                detailed_notes_sections.append(completed_notes[str(idx)])
+                on_progress(idx + 1, total_chapters)
+                continue
+
             on_log(
                 f"Processing Chapter {idx + 1}/{total_chapters}: "
                 f"'{title}' ({word_count} words)..."
             )
-
-            if cancel_event.is_set():
-                on_log("Pipeline cancelled by user.")
-                break
 
             user_prompt = (
                 f'You are generating revision notes for Chapter {idx + 1}: "{title}"\n'
@@ -224,6 +259,12 @@ def _run_llm_pipeline(
                 f"correct code or formulas."
             )
 
+            # Estimate tokens and wait for rate limiter
+            est_tokens = estimate_tokens(ch_text + user_prompt)
+            if not limiter.wait_if_needed(est_tokens, cancel_event, on_log):
+                on_log("Pipeline cancelled by user.")
+                break
+
             max_retries = 3
             retry_delay = 20  # seconds
             response = None
@@ -243,6 +284,10 @@ def _run_llm_pipeline(
                         ),
                         user_prompt=user_prompt,
                     )
+                    # Update rate limiter with actual output tokens
+                    if response:
+                        actual_tokens = est_tokens + estimate_tokens(response)
+                        limiter.record_actual_tokens(actual_tokens)
                     break  # Success!
                 except Exception as e:
                     if attempt < max_retries - 1:
@@ -250,13 +295,12 @@ def _run_llm_pipeline(
                             f"API Error (Attempt {attempt + 1}/{max_retries}): {e}"
                         )
                         on_log(
-                            f"Cooling down for {retry_delay} seconds to bypass "
-                            f"rate limits..."
+                            f"Cooling down for {retry_delay} seconds..."
                         )
                         # Interruptible cooldown
                         if cancel_event.wait(retry_delay):
                             break
-                        retry_delay *= 2  # Exponential backoff (20s → 40s → Fail)
+                        retry_delay *= 2  # Exponential backoff (20s -> 40s -> Fail)
                     else:
                         on_log(
                             f"WARNING: Failed to generate notes for Chapter "
@@ -266,6 +310,7 @@ def _run_llm_pipeline(
 
             if response:
                 detailed_notes_sections.append(response)
+                completed_notes[str(idx)] = response
             else:
                 fallback = (
                     f"## {idx + 1}. {title} (Start Time: {time_str})\n\n"
@@ -277,18 +322,19 @@ def _run_llm_pipeline(
                 )
                 detailed_notes_sections.append(fallback)
 
+            # Save checkpoint after each chapter
+            try:
+                with open(checkpoint_path, "w", encoding="utf-8") as f:
+                    json.dump({"completed_notes": completed_notes}, f)
+            except Exception:
+                pass
+
             # Report progress after each chapter
             on_progress(idx + 1, total_chapters)
 
             if cancel_event.is_set():
                 on_log("Pipeline cancelled by user.")
                 break
-
-            # 3-second pacing delay between chapters for cloud APIs
-            if provider != "Ollama" and idx < total_chapters - 1:
-                if cancel_event.wait(3):
-                    on_log("Pipeline cancelled by user.")
-                    break
 
         # ------------------------------------------------------------------
         # Assemble Course_Detailed_Notes.md
@@ -425,6 +471,12 @@ def _run_llm_pipeline(
         on_log(f"Practical notes saved to: {practical_path}")
 
         on_log("=== PIPELINE COMPLETED SUCCESSFULLY ===")
+        # Clean up checkpoint file on success
+        if os.path.exists(checkpoint_path):
+            try:
+                os.remove(checkpoint_path)
+            except Exception:
+                pass
         return {
             "success": True,
             "detailed_path": detailed_path,
