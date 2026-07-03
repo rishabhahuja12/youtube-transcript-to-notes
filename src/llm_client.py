@@ -19,6 +19,7 @@ LLM_TIMEOUT_SECONDS = 180  # Max seconds to wait for a single LLM response
 PROVIDER_PRESETS = {
     "Groq": {"rpm": 25, "tpm": 5000, "label": "Groq Free (25 RPM, 5K TPM)"},
     "OpenRouter": {"rpm": 18, "tpm": 50000, "label": "OpenRouter Free (18 RPM)"},
+    "Gemini": {"rpm": 15, "tpm": 1000000, "label": "Gemini AI Studio (15 RPM)"},
     "Ollama": {"rpm": 9999, "tpm": 999999, "label": "Ollama Local (no limits)"},
 }
 

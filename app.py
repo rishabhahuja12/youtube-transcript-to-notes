@@ -131,6 +131,9 @@ def _show_env_help_popup(root):
         elif prov == "OpenRouter":
             endpoint_var.set("https://openrouter.ai/api/v1/chat/completions")
             model_var.set("anthropic/claude-3.5-sonnet")
+        elif prov == "Gemini":
+            endpoint_var.set("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+            model_var.set("gemini-1.5-flash")
         elif prov == "Ollama":
             endpoint_var.set("http://localhost:11434")
             model_var.set("llama3")
@@ -140,7 +143,7 @@ def _show_env_help_popup(root):
 
     # Form Fields
     ctk.CTkLabel(form_frame, text="Provider:", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w", pady=8)
-    provider_dropdown = ctk.CTkOptionMenu(form_frame, variable=provider_var, values=["Groq", "OpenRouter", "Ollama", "Other"])
+    provider_dropdown = ctk.CTkOptionMenu(form_frame, variable=provider_var, values=["Groq", "OpenRouter", "Gemini", "Ollama", "Other"])
     provider_dropdown.grid(row=0, column=1, sticky="we", pady=8, padx=(10, 0))
 
     ctk.CTkLabel(form_frame, text="Endpoint URL:", font=("Segoe UI", 11, "bold")).grid(row=1, column=0, sticky="w", pady=8)
