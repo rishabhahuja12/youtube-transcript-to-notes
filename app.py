@@ -253,21 +253,18 @@ def convert_and_save_pdf(log_fn, root):
             custom_css = """
             body { font-family: 'Segoe UI', Helvetica, sans-serif; line-height: 1.5; color: #1f2937; }
             h1 {
-                page-break-before: always;
                 color: #1e3a8a;
                 font-size: 28pt;
                 border-bottom: 3px solid #3b82f6;
                 padding-bottom: 6px;
-                margin-top: 1em;
+                margin-top: 0;
             }
-            /* The very first h1 shouldn't have a page break if possible, but PyMuPDF usually ignores it on page 1 */
             h2 { 
-                page-break-before: always;
                 color: #2563eb; 
                 font-size: 20pt; 
                 border-bottom: 1px solid #d1d5db;
                 padding-bottom: 4px;
-                margin-top: 1.5em; 
+                margin-top: 0; 
             }
             h3 { color: #047857; font-size: 16pt; margin-top: 1.2em; }
             h4 { color: #6d28d9; font-size: 14pt; }
@@ -302,7 +299,26 @@ def convert_and_save_pdf(log_fn, root):
             """
 
             pdf = MarkdownPdf(toc_level=2, optimize=True)
-            pdf.add_section(Section(md_content, toc=True), user_css=custom_css)
+            
+            # Split markdown by H1/H2 headings to force true page breaks
+            lines = md_content.split('\n')
+            chunks = []
+            current_chunk = []
+            
+            for line in lines:
+                if line.startswith('# ') or line.startswith('## '):
+                    if current_chunk:
+                        chunks.append('\n'.join(current_chunk))
+                        current_chunk = []
+                current_chunk.append(line)
+            
+            if current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                
+            for chunk in chunks:
+                if chunk.strip():
+                    pdf.add_section(Section(chunk, toc=True), user_css=custom_css)
+                    
             pdf.save(pdf_file)
             log_fn(f"SUCCESS: Saved PDF to {pdf_file}")
             root.after(0, lambda: messagebox.showinfo("Success", f"PDF saved successfully to:\n{pdf_file}"))
