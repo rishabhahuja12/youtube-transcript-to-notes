@@ -304,17 +304,26 @@ def _run_llm_pipeline(
                     break  # Success!
                 except Exception as e:
                     if attempt < max_retries - 1:
+                        err_str = str(e)
+                        # Try to parse exact retry delay from Gemini's error
+                        match = re.search(r"Please retry in ([\d\.]+)s", err_str)
+                        if match:
+                            try:
+                                retry_delay = float(match.group(1)) + 2.0  # +2s buffer
+                            except ValueError:
+                                pass
+                                
                         on_log(
                             f"API Error (Attempt {attempt + 1}/{max_retries}): {e}"
                         )
                         on_log(
-                            f"Cooling down for {retry_delay} seconds..."
+                            f"Cooling down for {retry_delay:.1f} seconds..."
                         )
                         # Interruptible cooldown
                         if cancel_event.wait(retry_delay):
                             pipeline_cancelled = True
                             break
-                        retry_delay *= 2  # Exponential backoff (20s -> 40s -> Fail)
+                        retry_delay *= 2  # Exponential backoff (for the next attempt, if any)
                     else:
                         on_log(
                             f"WARNING: Failed to generate notes for Chapter "
