@@ -188,25 +188,16 @@ def _show_env_help_popup(root):
 
 
 def install_pdf_library(log_fn, root):
-    """Install the WeasyPrint-based PDF stack into the local .venv.
-
-    WeasyPrint replaces markdown-pdf/PyMuPDF: it's a real CSS Paged Media
-    engine (supports @page, break-before/after/inside, running headers,
-    page counters, orphans/widows) instead of the primitive box model
-    fitz.Story uses, which is what caused the page-break infinite loop
-    and the generally clunky typography.
-    """
+    """Install markdown-pdf into the local .venv."""
     pip_path = os.path.join(SCRIPT_DIR, ".venv", "Scripts", "pip")
     if os.path.exists(pip_path + ".exe"):
         pip_path += ".exe"
 
-    packages = ["markdown", "weasyprint", "pygments"]
-
     def run_install():
-        log_fn(f"Running pip install {' '.join(packages)} in virtual environment...")
+        log_fn("Running pip install markdown-pdf in virtual environment...")
         try:
             process = subprocess.Popen(
-                [pip_path, "install"] + packages,
+                [pip_path, "install", "markdown-pdf"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -216,15 +207,8 @@ def install_pdf_library(log_fn, root):
                 log_fn(line.strip())
             process.wait()
             if process.returncode == 0:
-                log_fn("SUCCESS: PDF export stack installed successfully!")
-                root.after(0, lambda: messagebox.showinfo(
-                    "Success",
-                    "PDF export stack installed successfully!\n\n"
-                    "Note: WeasyPrint depends on native libraries (Pango, Cairo, "
-                    "GDK-PixBuf/GObject). On Windows these usually come via the "
-                    "GTK3 runtime -- if PDF conversion fails with a DLL/library "
-                    "load error, install the GTK3 runtime for Windows and retry."
-                ))
+                log_fn("SUCCESS: markdown-pdf installed successfully!")
+                root.after(0, lambda: messagebox.showinfo("Success", "markdown-pdf installed successfully! No external dependencies required."))
             else:
                 log_fn(f"ERROR: Installation failed with exit code {process.returncode}")
                 root.after(0, lambda: messagebox.showerror("Error", f"Installation failed with exit code {process.returncode}"))
@@ -234,6 +218,52 @@ def install_pdf_library(log_fn, root):
 
     threading.Thread(target=run_install, daemon=True).start()
 
+
+def _get_shared_pdf_css():
+    """Return the custom CSS used for both preview and export."""
+    return """
+    body { font-family: 'Segoe UI', Helvetica, sans-serif; line-height: 1.5; color: #1f2937; }
+    h1 { color: #1e3a8a; font-size: 26pt; border-bottom: 3px solid #3b82f6; padding-bottom: 6px; margin-top: 0; }
+    h2 { color: #2563eb; font-size: 18pt; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 0; }
+    h3 { color: #047857; font-size: 14pt; margin-top: 1.2em; }
+    h4 { color: #6d28d9; font-size: 12pt; }
+    p { margin-bottom: 1em; }
+    li { margin-bottom: 0.5em; }
+    pre { background-color: #f8fafc; padding: 12px; border-left: 4px solid #94a3b8; font-family: 'Courier New', Courier, monospace; font-size: 10pt; white-space: pre-wrap; }
+    code { background-color: #f1f5f9; color: #be123c; padding: 2px 5px; font-family: 'Courier New', Courier, monospace; }
+    blockquote { border-left: 4px solid #3b82f6; background-color: #eff6ff; padding: 10px 15px; color: #4b5563; font-style: italic; }
+    table { width: 100%; border-collapse: collapse; margin: 1em 0; }
+    th { background-color: #e2e8f0; font-weight: bold; padding: 10px; border: 1px solid #cbd5e1; color: #0f172a; text-align: left; }
+    td { padding: 10px; border: 1px solid #cbd5e1; }
+    tr:nth-child(even) { background-color: #f8fafc; }
+    a { color: #2563eb; text-decoration: none; }
+    """
+
+def _build_pdf_document(md_content):
+    """Build a MarkdownPdf object using the manual section splitting technique to enforce page breaks natively."""
+    from markdown_pdf import MarkdownPdf, Section
+    pdf = MarkdownPdf(toc_level=2, optimize=True)
+    custom_css = _get_shared_pdf_css()
+    
+    lines = md_content.split('\n')
+    chunks = []
+    current_chunk = []
+    
+    for line in lines:
+        if line.startswith('# ') or line.startswith('## '):
+            if current_chunk:
+                chunks.append('\n'.join(current_chunk))
+                current_chunk = []
+        current_chunk.append(line)
+    
+    if current_chunk:
+        chunks.append('\n'.join(current_chunk))
+        
+    for chunk in chunks:
+        if chunk.strip():
+            pdf.add_section(Section(chunk, toc=True), user_css=custom_css)
+            
+    return pdf
 
 def convert_and_save_pdf(log_fn, root):
     """Let the user pick a Markdown file and export it as PDF."""
@@ -260,150 +290,15 @@ def convert_and_save_pdf(log_fn, root):
             if os.path.exists(venv_site) and venv_site not in sys.path:
                 sys.path.append(venv_site)
             try:
-                import markdown as md_lib
-                from weasyprint import HTML, CSS
+                import markdown_pdf
             except ImportError:
-                raise Exception(
-                    "The 'markdown'/'weasyprint' libraries are not available. "
-                    "Please click 'Install PDF Library' first."
-                )
+                raise Exception("The 'markdown-pdf' library is not available. Please click 'Install PDF Library' first.")
 
             with open(md_file, "r", encoding="utf-8", errors="replace") as f:
                 md_content = f.read()
 
-            log_fn("Converting Markdown -> HTML...")
-            html_body = md_lib.markdown(
-                md_content,
-                extensions=[
-                    "extra",        # tables, fenced_code, footnotes, etc.
-                    "toc",          # heading ids + optional TOC
-                    "codehilite",   # syntax highlighting via Pygments
-                    "sane_lists",
-                    "admonition",
-                ],
-                extension_configs={
-                    "codehilite": {"guess_lang": False, "css_class": "codehilite"},
-                    "toc": {"anchorlink": False},
-                },
-            )
-
-            doc_title = os.path.splitext(os.path.basename(md_file))[0]
-
-            # Page breaks are handled declaratively via CSS (break-before /
-            # break-inside), not by manually slicing the markdown string.
-            css = """
-            @page {
-                size: A4;
-                margin: 2.4cm 2cm 2.2cm 2cm;
-                @bottom-center {
-                    content: counter(page) " / " counter(pages);
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 9pt;
-                    color: #9ca3af;
-                }
-            }
-            @page :first {
-                @bottom-center { content: normal; }
-            }
-
-            html { font-size: 11pt; }
-            body {
-                font-family: 'Segoe UI', 'Calibri', Arial, sans-serif;
-                line-height: 1.55;
-                color: #1f2937;
-            }
-
-            h1 {
-                color: #1e3a8a;
-                font-size: 26pt;
-                border-bottom: 3px solid #3b82f6;
-                padding-bottom: 6px;
-                margin-top: 0;
-                break-before: page;      /* new page per top-level chapter */
-                break-after: avoid-page;
-            }
-            h1:first-of-type { break-before: avoid-page; }  /* no blank first page */
-
-            h2 {
-                color: #2563eb;
-                font-size: 18pt;
-                border-bottom: 1px solid #d1d5db;
-                padding-bottom: 4px;
-                margin-top: 1.6em;
-                break-after: avoid-page;   /* heading never stranded at page bottom */
-            }
-            h3 { color: #047857; font-size: 14pt; margin-top: 1.3em; break-after: avoid-page; }
-            h4 { color: #6d28d9; font-size: 12pt; break-after: avoid-page; }
-
-            p { margin: 0 0 1em 0; orphans: 3; widows: 3; }
-            li { margin-bottom: 0.4em; }
-            ul, ol { margin-bottom: 1em; }
-
-            pre {
-                background-color: #f8fafc;
-                padding: 12px 14px;
-                border-left: 4px solid #94a3b8;
-                border-radius: 4px;
-                font-family: 'Consolas', 'Courier New', monospace;
-                font-size: 9.5pt;
-                white-space: pre-wrap;
-                break-inside: avoid;
-            }
-            code {
-                background-color: #f1f5f9;
-                color: #be123c;
-                padding: 1px 5px;
-                border-radius: 3px;
-                font-family: 'Consolas', 'Courier New', monospace;
-                font-size: 0.9em;
-            }
-            pre code { background: none; color: inherit; padding: 0; }
-
-            blockquote {
-                border-left: 4px solid #3b82f6;
-                background-color: #eff6ff;
-                padding: 10px 15px;
-                margin: 1em 0;
-                color: #4b5563;
-                font-style: italic;
-                break-inside: avoid;
-            }
-
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 1em 0;
-                break-inside: avoid;
-                font-size: 10pt;
-            }
-            th {
-                background-color: #e2e8f0;
-                font-weight: bold;
-                padding: 8px 10px;
-                border: 1px solid #cbd5e1;
-                color: #0f172a;
-                text-align: left;
-            }
-            td { padding: 8px 10px; border: 1px solid #cbd5e1; }
-            tr:nth-child(even) td { background-color: #f8fafc; }
-
-            a { color: #2563eb; text-decoration: none; }
-            hr { border: none; border-top: 1px solid #e5e7eb; margin: 2em 0; }
-            img { max-width: 100%; }
-            """
-
-            full_html = f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><title>{doc_title}</title></head>
-<body>
-{html_body}
-</body>
-</html>"""
-
-            log_fn("Rendering PDF with WeasyPrint (this may take a moment)...")
-            HTML(string=full_html, base_url=os.path.dirname(md_file)).write_pdf(
-                pdf_file, stylesheets=[CSS(string=css)]
-            )
+            pdf = _build_pdf_document(md_content)
+            pdf.save(pdf_file)
 
             log_fn(f"SUCCESS: Saved PDF to {pdf_file}")
             root.after(0, lambda: messagebox.showinfo("Success", f"PDF saved successfully to:\n{pdf_file}"))
@@ -434,69 +329,17 @@ def preview_pdf(log_fn, root):
             if os.path.exists(venv_site) and venv_site not in sys.path:
                 sys.path.append(venv_site)
             try:
-                import markdown as md_lib
-                from weasyprint import HTML, CSS
+                import markdown_pdf
             except ImportError:
-                raise Exception(
-                    "The 'markdown'/'weasyprint' libraries are not available. "
-                    "Please click 'Install PDF Library' first."
-                )
+                raise Exception("The 'markdown-pdf' library is not available. Please click 'Install PDF Library' first.")
 
             with open(md_file, "r", encoding="utf-8", errors="replace") as f:
                 md_content = f.read()
 
-            html_body = md_lib.markdown(
-                md_content,
-                extensions=["extra", "toc", "codehilite", "sane_lists", "admonition"],
-                extension_configs={
-                    "codehilite": {"guess_lang": False, "css_class": "codehilite"},
-                    "toc": {"anchorlink": False},
-                },
-            )
-
-            doc_title = "Preview - " + os.path.splitext(os.path.basename(md_file))[0]
-
-            css = """
-            @page {
-                size: A4;
-                margin: 2.4cm 2cm 2.2cm 2cm;
-                @bottom-center {
-                    content: counter(page) " / " counter(pages);
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    font-size: 9pt;
-                    color: #9ca3af;
-                }
-            }
-            @page :first { @bottom-center { content: normal; } }
-            html { font-size: 11pt; }
-            body { font-family: 'Segoe UI', 'Calibri', Arial, sans-serif; line-height: 1.55; color: #1f2937; }
-            h1 { color: #1e3a8a; font-size: 26pt; border-bottom: 3px solid #3b82f6; padding-bottom: 6px; margin-top: 0; break-before: page; break-after: avoid-page; }
-            h1:first-of-type { break-before: avoid-page; }
-            h2 { color: #2563eb; font-size: 18pt; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 1.6em; break-after: avoid-page; }
-            h3 { color: #047857; font-size: 14pt; margin-top: 1.3em; break-after: avoid-page; }
-            h4 { color: #6d28d9; font-size: 12pt; break-after: avoid-page; }
-            p { margin: 0 0 1em 0; orphans: 3; widows: 3; }
-            li { margin-bottom: 0.4em; }
-            ul, ol { margin-bottom: 1em; }
-            pre { background-color: #f8fafc; padding: 12px 14px; border-left: 4px solid #94a3b8; border-radius: 4px; font-family: 'Consolas', 'Courier New', monospace; font-size: 9.5pt; white-space: pre-wrap; break-inside: avoid; }
-            code { background-color: #f1f5f9; color: #be123c; padding: 1px 5px; border-radius: 3px; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.9em; }
-            pre code { background: none; color: inherit; padding: 0; }
-            blockquote { border-left: 4px solid #3b82f6; background-color: #eff6ff; padding: 10px 15px; margin: 1em 0; color: #4b5563; font-style: italic; break-inside: avoid; }
-            table { width: 100%; border-collapse: collapse; margin: 1em 0; break-inside: avoid; font-size: 10pt; }
-            th { background-color: #e2e8f0; font-weight: bold; padding: 8px 10px; border: 1px solid #cbd5e1; color: #0f172a; text-align: left; }
-            td { padding: 8px 10px; border: 1px solid #cbd5e1; }
-            tr:nth-child(even) td { background-color: #f8fafc; }
-            a { color: #2563eb; text-decoration: none; }
-            hr { border: none; border-top: 1px solid #e5e7eb; margin: 2em 0; }
-            img { max-width: 100%; }
-            """
-
-            full_html = f"<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>{doc_title}</title></head><body>{html_body}</body></html>"
+            pdf = _build_pdf_document(md_content)
 
             temp_pdf = os.path.join(tempfile.gettempdir(), "yt_transcriptor_preview.pdf")
-            HTML(string=full_html, base_url=os.path.dirname(md_file)).write_pdf(
-                temp_pdf, stylesheets=[CSS(string=css)]
-            )
+            pdf.save(temp_pdf)
 
             log_fn("SUCCESS: Preview generated. Opening...")
             _open_path(temp_pdf)
