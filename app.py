@@ -121,13 +121,13 @@ def _show_env_help_popup(root):
     provider_var = tk.StringVar(value="Groq")
     endpoint_var = tk.StringVar(value="https://api.groq.com/openai/v1/chat/completions")
     api_key_var = tk.StringVar()
-    model_var = tk.StringVar(value="llama3-70b-8192")
+    model_var = tk.StringVar(value="llama-3.3-70b-versatile")
 
     def on_provider_change(*args):
         prov = provider_var.get()
         if prov == "Groq":
             endpoint_var.set("https://api.groq.com/openai/v1/chat/completions")
-            model_var.set("llama3-70b-8192")
+            model_var.set("llama-3.3-70b-versatile")
         elif prov == "OpenRouter":
             endpoint_var.set("https://openrouter.ai/api/v1/chat/completions")
             model_var.set("anthropic/claude-3.5-sonnet")
