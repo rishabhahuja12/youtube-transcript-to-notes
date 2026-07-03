@@ -577,27 +577,48 @@ Make sure you structure the notes with:
 7. Quick revision recap: A bulleted summary cheat-sheet of key takeaways.
 
 Add value using your own domain knowledge to correct any transcription errors, explain concepts clearly, and write mathematically/syntactically correct code or formulas."""
+                max_retries = 3
+                retry_delay = 20  # seconds
+                response = None
                 
-                try:
-                    response = call_llm(
-                        provider=provider,
-                        endpoint_url=endpoint_url,
-                        api_key=api_key,
-                        model_name=model_name,
-                        system_prompt="You are an expert technical note-writer and instructional designer. Your task is to write highly detailed, clear, and structured revision notes for a chapter of a video course based on its transcript segment.",
-                        user_prompt=user_prompt
-                    )
+                for attempt in range(max_retries):
+                    try:
+                        response = call_llm(
+                            provider=provider,
+                            endpoint_url=endpoint_url,
+                            api_key=api_key,
+                            model_name=model_name,
+                            system_prompt="You are an expert technical note-writer and instructional designer. Your task is to write highly detailed, clear, and structured revision notes for a chapter of a video course based on its transcript segment.",
+                            user_prompt=user_prompt
+                        )
+                        break  # Success!
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            log_message(f"API Error (Attempt {attempt+1}/{max_retries}): {str(e)}")
+                            log_message(f"Cooling down for {retry_delay} seconds to bypass rate limits...")
+                            import time
+                            time.sleep(retry_delay)
+                            retry_delay *= 2  # Exponential backoff (20s -> 40s -> Fail)
+                        else:
+                            log_message(f"WARNING: Failed to generate notes for Chapter {idx+1} after {max_retries} attempts: {str(e)}")
+                            response = None
+                            
+                if response:
                     detailed_notes_sections.append(response)
-                except Exception as e:
-                    log_message(f"WARNING: Failed to generate notes for Chapter {idx+1}: {str(e)}")
+                else:
                     fallback = f"""## {idx+1}. {title} (Start Time: {time_str})
-
+                    
 ### Summary
-[Could not generate notes using LLM due to error: {str(e)}]
+[Could not generate notes using LLM due to repeated errors/rate limits.]
 
 ### Transcript Snippet
 {ch_text[:500]}..."""
                     detailed_notes_sections.append(fallback)
+                    
+                # Add a small deliberate pause between chapters for Cloud APIs to prevent tripping rapid-fire limits
+                if provider != "Ollama" and idx < len(chapters) - 1:
+                    import time
+                    time.sleep(3)
                     
             # Assemble Course_Detailed_Notes.md
             log_message("Assembling Course_Detailed_Notes.md...")
