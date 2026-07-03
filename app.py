@@ -351,8 +351,6 @@ def main():
     youtube_url_var = tk.StringVar()
 
     # ── Console log helper with file mirroring ──
-    log_file_handle = [None]  # mutable container for closure
-
     def log_message(msg):
         timestamp = datetime.now().strftime("%H:%M:%S")
         stamped = f"[{timestamp}] {msg}"
@@ -366,11 +364,9 @@ def main():
         try:
             out_dir = output_dir_var.get().strip()
             if out_dir and os.path.isdir(out_dir):
-                if log_file_handle[0] is None:
-                    log_path = os.path.join(out_dir, "pipeline.log")
-                    log_file_handle[0] = open(log_path, "a", encoding="utf-8")
-                log_file_handle[0].write(stamped + "\n")
-                log_file_handle[0].flush()
+                log_path = os.path.join(out_dir, "pipeline.log")
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(stamped + "\n")
         except Exception:
             pass
 
@@ -417,7 +413,6 @@ def main():
             return
 
         cancel_event.clear()
-        log_file_handle[0] = None  # Reset log file for new run
         start_btn.pack_forget()
         cancel_btn.configure(state="normal", text="Cancel Pipeline")
         cancel_btn.pack(fill="x", side="bottom")
@@ -453,13 +448,6 @@ def main():
                 log_message(f"CRITICAL ERROR in pipeline: {str(e)}")
                 root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
             finally:
-                # Close log file
-                if log_file_handle[0]:
-                    try:
-                        log_file_handle[0].close()
-                    except Exception:
-                        pass
-                    log_file_handle[0] = None
                 def restore_ui():
                     cancel_btn.pack_forget()
                     start_btn.pack(fill="x", side="bottom")
@@ -494,7 +482,6 @@ def main():
             return
 
         cancel_event.clear()
-        log_file_handle[0] = None  # Reset log file for new run
         start_btn.pack_forget()
         cancel_btn.configure(state="normal", text="Cancel Pipeline")
         cancel_btn.pack(fill="x", side="bottom")
@@ -555,13 +542,6 @@ def main():
                 log_message(f"CRITICAL ERROR: {str(e)}")
                 root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
             finally:
-                # Close log file
-                if log_file_handle[0]:
-                    try:
-                        log_file_handle[0].close()
-                    except Exception:
-                        pass
-                    log_file_handle[0] = None
                 def restore_ui():
                     cancel_btn.pack_forget()
                     start_btn.pack(fill="x", side="bottom")

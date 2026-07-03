@@ -191,7 +191,8 @@ def extract_from_url(url: str, on_log: callable = None) -> dict:
     # Step 1: Fetch metadata (chapters, title, description)
     log("Fetching video metadata via yt-dlp...")
     try:
-        metadata = fetch_metadata(url)
+        sanitized_url = f"https://www.youtube.com/watch?v={video_id}"
+        metadata = fetch_metadata(sanitized_url)
         log(f"Video: '{metadata['title']}' by {metadata['uploader']} ({metadata['duration'] // 60} min)")
     except Exception as e:
         log(f"WARNING: Could not fetch metadata: {str(e)}")

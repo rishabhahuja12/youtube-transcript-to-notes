@@ -88,6 +88,10 @@ class AdaptiveRateLimiter:
         """
         log = on_log or (lambda msg: None)
         
+        if estimated_tokens > self.tpm_limit:
+            log(f"WARNING: Estimated tokens ({estimated_tokens}) exceeds TPM limit ({self.tpm_limit}). Clamping to limit.")
+            estimated_tokens = self.tpm_limit
+            
         while True:
             if cancel_event and cancel_event.is_set():
                 return False

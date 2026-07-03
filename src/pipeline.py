@@ -8,6 +8,7 @@ variables.  All feedback is delivered through caller-supplied callbacks.
 import os
 import json
 import threading
+import hashlib
 
 from src.parser import (
     parse_outline_text,
@@ -194,14 +195,18 @@ def _run_llm_pipeline(
         limiter = AdaptiveRateLimiter.for_provider(provider)
 
         # --- Load checkpoint if exists ---
+        checkpoint_signature = hashlib.md5(json.dumps(chapters, sort_keys=True).encode("utf-8")).hexdigest()
         completed_notes = {}
         if os.path.exists(checkpoint_path):
             try:
                 with open(checkpoint_path, "r", encoding="utf-8") as f:
                     checkpoint = json.load(f)
-                completed_notes = checkpoint.get("completed_notes", {})
-                if completed_notes:
-                    on_log(f"\u2705 Resuming from checkpoint: {len(completed_notes)}/{len(chapters)} chapters already done.")
+                if checkpoint.get("signature") == checkpoint_signature:
+                    completed_notes = checkpoint.get("completed_notes", {})
+                    if completed_notes:
+                        on_log(f"✅ Resuming from checkpoint: {len(completed_notes)}/{len(chapters)} chapters already done.")
+                else:
+                    on_log("Checkpoint signature mismatch, starting fresh.")
             except Exception:
                 pass
 
@@ -259,17 +264,19 @@ def _run_llm_pipeline(
                 f"correct code or formulas."
             )
 
-            # Estimate tokens and wait for rate limiter
             est_tokens = estimate_tokens(ch_text + user_prompt)
-            if not limiter.wait_if_needed(est_tokens, cancel_event, on_log):
-                on_log("Pipeline cancelled by user.")
-                break
-
             max_retries = 3
             retry_delay = 20  # seconds
             response = None
+            pipeline_cancelled = False
 
             for attempt in range(max_retries):
+                # Wait for rate limiter inside the retry loop
+                if not limiter.wait_if_needed(est_tokens, cancel_event, on_log):
+                    on_log("Pipeline cancelled by user.")
+                    pipeline_cancelled = True
+                    break
+
                 try:
                     response = call_llm(
                         provider=provider,
@@ -299,6 +306,7 @@ def _run_llm_pipeline(
                         )
                         # Interruptible cooldown
                         if cancel_event.wait(retry_delay):
+                            pipeline_cancelled = True
                             break
                         retry_delay *= 2  # Exponential backoff (20s -> 40s -> Fail)
                     else:
@@ -307,6 +315,9 @@ def _run_llm_pipeline(
                             f"{idx + 1} after {max_retries} attempts: {e}"
                         )
                         response = None
+            
+            if pipeline_cancelled:
+                break
 
             if response:
                 detailed_notes_sections.append(response)
@@ -325,7 +336,7 @@ def _run_llm_pipeline(
             # Save checkpoint after each chapter
             try:
                 with open(checkpoint_path, "w", encoding="utf-8") as f:
-                    json.dump({"completed_notes": completed_notes}, f)
+                    json.dump({"signature": checkpoint_signature, "completed_notes": completed_notes}, f)
             except Exception:
                 pass
 
