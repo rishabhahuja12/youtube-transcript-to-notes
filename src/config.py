@@ -30,7 +30,7 @@ def parse_env_file(filepath):
 
 
 def get_llm_config(env_path):
-    """Load LLM configuration from a .env file.
+    """Load LLM configuration. First checks system keyring, falls back to .env file.
 
     Args:
         env_path: Path to the .env file.
@@ -38,6 +38,11 @@ def get_llm_config(env_path):
     Returns:
         Tuple of (provider, endpoint_url, api_key, model_name).
     """
+    from src.credentials import has_stored_credentials, get_llm_config_from_keyring
+    
+    if has_stored_credentials():
+        return get_llm_config_from_keyring()
+        
     env = parse_env_file(env_path)
     provider = env.get("PROVIDER", "Ollama")
     endpoint_url = env.get("ENDPOINT_URL", "http://localhost:11434")

@@ -17,6 +17,7 @@ import shutil
 import threading
 import subprocess
 import tkinter as tk
+from datetime import datetime
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
@@ -77,22 +78,24 @@ def save_config(transcript_var, timestamps_var, output_var):
 
 
 def check_env_and_show_help(root):
-    """On first run, if .env is missing or empty, copy .env.example and show help."""
+    """On first run, check if credentials exist. If not, show setup dialog."""
+    from src.credentials import has_stored_credentials
+    
+    if has_stored_credentials():
+        return
+        
     env = parse_env_file(ENV_PATH)
     if not env or not env.get("MODEL_NAME"):
-        if not os.path.exists(ENV_PATH) and os.path.exists(ENV_EXAMPLE_PATH):
-            try:
-                shutil.copy2(ENV_EXAMPLE_PATH, ENV_PATH)
-            except Exception:
-                pass
         root.after(500, lambda: _show_env_help_popup(root))
 
 
 def _show_env_help_popup(root):
-    """Display a one-time help window explaining how to configure the .env file."""
+    """Display an interactive dialog for secure API credential setup."""
+    from src.credentials import store_all_credentials
+    
     help_win = ctk.CTkToplevel(root)
-    help_win.title("Setup Required")
-    help_win.geometry("620x480")
+    help_win.title("API Configuration Setup")
+    help_win.geometry("500x550")
     help_win.resizable(False, False)
     help_win.transient(root)
     help_win.grab_set()
@@ -106,51 +109,77 @@ def _show_env_help_popup(root):
     ctk.CTkLabel(
         help_win,
         text="This app needs an LLM endpoint to generate notes.\n"
-             "Your credentials are stored locally in a .env file\n"
-             "that is gitignored and never committed.",
+             "Your credentials will be securely stored in the Windows\n"
+             "Credential Manager.",
         font=("Segoe UI", 11), text_color="#a1a1aa", justify="left"
-    ).pack(padx=20, anchor="w", pady=(0, 10))
+    ).pack(padx=20, anchor="w", pady=(0, 20))
 
-    ctk.CTkLabel(
-        help_win, text="Config file location:",
-        font=("Segoe UI", 11, "bold"), text_color="#f4f4f5"
-    ).pack(padx=20, anchor="w")
+    form_frame = ctk.CTkFrame(help_win, fg_color="transparent")
+    form_frame.pack(fill="x", padx=20)
 
-    path_entry = ctk.CTkEntry(help_win, font=("Consolas", 10), width=560, state="normal")
-    path_entry.pack(padx=20, pady=(2, 10), anchor="w")
-    path_entry.insert(0, ENV_PATH)
-    path_entry.configure(state="disabled")
+    # Variables
+    provider_var = tk.StringVar(value="Groq")
+    endpoint_var = tk.StringVar(value="https://api.groq.com/openai/v1/chat/completions")
+    api_key_var = tk.StringVar()
+    model_var = tk.StringVar(value="llama3-70b-8192")
 
-    help_text = (
-        "Open the .env file in any text editor and fill in:\n\n"
-        "  PROVIDER=Ollama                      (or 'OpenAI Compatible')\n"
-        "  ENDPOINT_URL=http://localhost:11434   (your API endpoint)\n"
-        "  API_KEY=                              (leave blank for Ollama)\n"
-        "  MODEL_NAME=llama3                     (your model name)\n\n"
-        "See .env.example for more provider examples (Grok, OpenRouter, Groq).\n"
-        "After editing, restart the app or just click Start."
-    )
-    help_textbox = ctk.CTkTextbox(
-        help_win, font=("Consolas", 11), fg_color="#18181b",
-        text_color="#10b981", height=160, corner_radius=8
-    )
-    help_textbox.pack(padx=20, fill="x")
-    help_textbox.insert("1.0", help_text)
-    help_textbox.configure(state="disabled")
+    def on_provider_change(*args):
+        prov = provider_var.get()
+        if prov == "Groq":
+            endpoint_var.set("https://api.groq.com/openai/v1/chat/completions")
+            model_var.set("llama3-70b-8192")
+        elif prov == "OpenRouter":
+            endpoint_var.set("https://openrouter.ai/api/v1/chat/completions")
+            model_var.set("anthropic/claude-3.5-sonnet")
+        elif prov == "Ollama":
+            endpoint_var.set("http://localhost:11434")
+            model_var.set("llama3")
+            api_key_var.set("")
+
+    provider_var.trace_add("write", on_provider_change)
+
+    # Form Fields
+    ctk.CTkLabel(form_frame, text="Provider:", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w", pady=8)
+    provider_dropdown = ctk.CTkOptionMenu(form_frame, variable=provider_var, values=["Groq", "OpenRouter", "Ollama", "Other"])
+    provider_dropdown.grid(row=0, column=1, sticky="we", pady=8, padx=(10, 0))
+
+    ctk.CTkLabel(form_frame, text="Endpoint URL:", font=("Segoe UI", 11, "bold")).grid(row=1, column=0, sticky="w", pady=8)
+    ctk.CTkEntry(form_frame, textvariable=endpoint_var, width=300).grid(row=1, column=1, sticky="we", pady=8, padx=(10, 0))
+
+    ctk.CTkLabel(form_frame, text="Model Name:", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, sticky="w", pady=8)
+    ctk.CTkEntry(form_frame, textvariable=model_var, width=300).grid(row=2, column=1, sticky="we", pady=8, padx=(10, 0))
+
+    ctk.CTkLabel(form_frame, text="API Key:", font=("Segoe UI", 11, "bold")).grid(row=3, column=0, sticky="w", pady=8)
+    ctk.CTkEntry(form_frame, textvariable=api_key_var, show="*", width=300).grid(row=3, column=1, sticky="we", pady=8, padx=(10, 0))
+
+    def save_and_close():
+        p = provider_var.get().strip()
+        e = endpoint_var.get().strip()
+        k = api_key_var.get().strip()
+        m = model_var.get().strip()
+
+        if not e or not m:
+            messagebox.showerror("Error", "Endpoint and Model Name are required.", parent=help_win)
+            return
+
+        success = store_all_credentials(p, e, k, m)
+        if success:
+            messagebox.showinfo("Success", "Credentials saved securely!", parent=help_win)
+            help_win.destroy()
+            
+            # Since config might have changed, restart is technically safest, but we can just let them click start.
+            root.after(0, lambda: messagebox.showinfo("Ready", "Configuration saved. You can now use the pipeline."))
+        else:
+            messagebox.showerror("Error", "Failed to save to system keyring.", parent=help_win)
 
     btn_frame = ctk.CTkFrame(help_win, fg_color="transparent")
-    btn_frame.pack(pady=15, padx=20, fill="x")
+    btn_frame.pack(pady=30, padx=20, fill="x")
 
     ctk.CTkButton(
-        btn_frame, text="Open .env File", font=("Segoe UI", 11, "bold"),
-        fg_color="#3f3f46", hover_color="#52525b",
-        command=lambda: _open_path(ENV_PATH)
-    ).pack(side="left", padx=(0, 10))
-
-    ctk.CTkButton(
-        btn_frame, text="Got it, close", font=("Segoe UI", 11, "bold"),
-        fg_color="#3b82f6", hover_color="#2563eb", command=help_win.destroy
-    ).pack(side="right")
+        btn_frame, text="Save Credentials", font=("Segoe UI", 13, "bold"),
+        fg_color="#10b981", hover_color="#059669", height=40,
+        command=save_and_close
+    ).pack(fill="x")
 
 
 # ───────────────────────── PDF Tooling Handlers ────────────────────────
@@ -251,14 +280,29 @@ def main():
     output_dir_var = tk.StringVar()
     youtube_url_var = tk.StringVar()
 
-    # ── Console log helper ──
+    # ── Console log helper with file mirroring ──
+    log_file_handle = [None]  # mutable container for closure
+
     def log_message(msg):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        stamped = f"[{timestamp}] {msg}"
         def _append():
             console_text.configure(state="normal")
-            console_text.insert(tk.END, msg + "\n")
+            console_text.insert(tk.END, stamped + "\n")
             console_text.see(tk.END)
             console_text.configure(state="disabled")
         root.after(0, _append)
+        # Mirror to log file
+        try:
+            out_dir = output_dir_var.get().strip()
+            if out_dir and os.path.isdir(out_dir):
+                if log_file_handle[0] is None:
+                    log_path = os.path.join(out_dir, "pipeline.log")
+                    log_file_handle[0] = open(log_path, "a", encoding="utf-8")
+                log_file_handle[0].write(stamped + "\n")
+                log_file_handle[0].flush()
+        except Exception:
+            pass
 
     # ── Browse handlers ──
     def browse_transcript():
@@ -303,14 +347,17 @@ def main():
             return
 
         cancel_event.clear()
+        log_file_handle[0] = None  # Reset log file for new run
         start_btn.pack_forget()
         cancel_btn.configure(state="normal", text="Cancel Pipeline")
         cancel_btn.pack(fill="x", side="bottom")
+        status_label.configure(text="Status: Running...", text_color="#fbbf24")
 
         def on_progress(current, total):
             progress_bar.set(current / total if total else 0)
 
         def process():
+            result = None
             try:
                 result = run_pipeline(
                     transcript_path=transcript_path,
@@ -336,10 +383,23 @@ def main():
                 log_message(f"CRITICAL ERROR in pipeline: {str(e)}")
                 root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
             finally:
+                # Close log file
+                if log_file_handle[0]:
+                    try:
+                        log_file_handle[0].close()
+                    except Exception:
+                        pass
+                    log_file_handle[0] = None
                 def restore_ui():
                     cancel_btn.pack_forget()
                     start_btn.pack(fill="x", side="bottom")
                     progress_bar.set(0)
+                    if cancel_event.is_set():
+                        status_label.configure(text="Status: Cancelled", text_color="#ef4444")
+                    elif result and result.get("success"):
+                        status_label.configure(text="Status: Completed ✅", text_color="#10b981")
+                    else:
+                        status_label.configure(text="Status: Error", text_color="#ef4444")
                 root.after(0, restore_ui)
 
         threading.Thread(target=process, daemon=True).start()
@@ -364,14 +424,17 @@ def main():
             return
 
         cancel_event.clear()
+        log_file_handle[0] = None  # Reset log file for new run
         start_btn.pack_forget()
         cancel_btn.configure(state="normal", text="Cancel Pipeline")
         cancel_btn.pack(fill="x", side="bottom")
+        status_label.configure(text="Status: Running...", text_color="#fbbf24")
 
         def on_progress(current, total):
             progress_bar.set(current / total if total else 0)
 
         def process():
+            result = None
             try:
                 from src.youtube import extract_from_url
                 log_message("=== YOUTUBE EXTRACTION ===")
@@ -422,10 +485,23 @@ def main():
                 log_message(f"CRITICAL ERROR: {str(e)}")
                 root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
             finally:
+                # Close log file
+                if log_file_handle[0]:
+                    try:
+                        log_file_handle[0].close()
+                    except Exception:
+                        pass
+                    log_file_handle[0] = None
                 def restore_ui():
                     cancel_btn.pack_forget()
                     start_btn.pack(fill="x", side="bottom")
                     progress_bar.set(0)
+                    if cancel_event.is_set():
+                        status_label.configure(text="Status: Cancelled", text_color="#ef4444")
+                    elif result and result.get("success"):
+                        status_label.configure(text="Status: Completed ✅", text_color="#10b981")
+                    else:
+                        status_label.configure(text="Status: Error", text_color="#ef4444")
                 root.after(0, restore_ui)
 
         threading.Thread(target=process, daemon=True).start()
@@ -520,11 +596,25 @@ def main():
     actions_inner = ctk.CTkFrame(actions_card, fg_color="transparent")
     actions_inner.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
+    # Status indicator
+    status_label = ctk.CTkLabel(
+        actions_inner, text="Status: Ready",
+        font=("Segoe UI", 10), text_color="#a1a1aa"
+    )
+    status_label.pack(anchor="w", pady=(5, 5))
+
     ctk.CTkButton(
-        actions_inner, text="Edit LLM Config (.env)",
+        actions_inner, text="API Setup / Credentials",
         font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b", height=35,
-        command=lambda: _open_path(ENV_PATH) if os.path.exists(ENV_PATH) else None
-    ).pack(fill="x", pady=(10, 15))
+        command=lambda: _show_env_help_popup(root)
+    ).pack(fill="x", pady=(5, 5))
+
+    open_output_btn = ctk.CTkButton(
+        actions_inner, text="Open Output Folder",
+        font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b", height=35,
+        command=lambda: _open_path(output_dir_var.get().strip()) if output_dir_var.get().strip() else None
+    )
+    open_output_btn.pack(fill="x", pady=(0, 5))
 
     def get_active_start_command():
         """Route to the correct pipeline based on active tab."""
