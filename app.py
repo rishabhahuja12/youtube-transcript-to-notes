@@ -605,8 +605,8 @@ Add value using your own domain knowledge to correct any transcription errors, e
                         if attempt < max_retries - 1:
                             log_message(f"API Error (Attempt {attempt+1}/{max_retries}): {str(e)}")
                             log_message(f"Cooling down for {retry_delay} seconds to bypass rate limits...")
-                            import time
-                            time.sleep(retry_delay)
+                            if cancel_event.wait(retry_delay):
+                                break
                             retry_delay *= 2  # Exponential backoff (20s -> 40s -> Fail)
                         else:
                             log_message(f"WARNING: Failed to generate notes for Chapter {idx+1} after {max_retries} attempts: {str(e)}")
@@ -624,10 +624,15 @@ Add value using your own domain knowledge to correct any transcription errors, e
 {ch_text[:500]}..."""
                     detailed_notes_sections.append(fallback)
                     
+                if cancel_event.is_set():
+                    log_message("Pipeline cancelled by user.")
+                    break
+                    
                 # Add a small deliberate pause between chapters for Cloud APIs to prevent tripping rapid-fire limits
                 if provider != "Ollama" and idx < len(chapters) - 1:
-                    import time
-                    time.sleep(3)
+                    if cancel_event.wait(3):
+                        log_message("Pipeline cancelled by user.")
+                        break
                     
             # Assemble Course_Detailed_Notes.md
             log_message("Assembling Course_Detailed_Notes.md...")
@@ -688,14 +693,17 @@ It must include:
 Make this extremely clean, professional, and directly useful as a high-impact reference guide. Output only the Markdown content."""
 
             try:
-                practical_summary = call_llm(
-                    provider=provider,
-                    endpoint_url=endpoint_url,
-                    api_key=api_key,
-                    model_name=model_name,
-                    system_prompt="You are an expert technical note-writer and instructional designer. Your task is to write a practical executive summary and cheat-sheet for a course based on its chapters and overall content.",
-                    user_prompt=user_prompt_summary
-                )
+                if cancel_event.is_set():
+                    practical_summary = "# Course Practical Cheat-Sheet & Summary\n\n[Skipped due to pipeline cancellation]\n"
+                else:
+                    practical_summary = call_llm(
+                        provider=provider,
+                        endpoint_url=endpoint_url,
+                        api_key=api_key,
+                        model_name=model_name,
+                        system_prompt="You are an expert technical note-writer and instructional designer. Your task is to write a practical executive summary and cheat-sheet for a course based on its chapters and overall content.",
+                        user_prompt=user_prompt_summary
+                    )
             except Exception as e:
                 log_message(f"ERROR generating practical summary: {str(e)}")
                 practical_summary = f"# Course Practical Cheat-Sheet & Summary\n\n[Failed to generate cheat-sheet using LLM: {str(e)}]\n"
