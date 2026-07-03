@@ -61,8 +61,7 @@ A powerful, automated tool for generating highly detailed, structured study note
 4. **Output:**
    The app will generate two markdown files in your selected output directory:
    - `{slug}_Detailed_Notes.md` (Chapter-by-chapter comprehensive notes)
-   - `{slug}_Practical_Guide.md` (Quick cheat-sheet)
-
+   - `{slug}_Practical_Notes.md` (Quick cheat-sheet)
 ## Architecture
 
 The v2.0 architecture was fully refactored for modularity, testability, and UI separation:
