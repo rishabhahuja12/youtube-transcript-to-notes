@@ -9,6 +9,7 @@ import os
 import json
 import threading
 import hashlib
+import re
 
 from src.parser import (
     parse_outline_text,
@@ -37,6 +38,7 @@ def run_pipeline(
     cancel_event: threading.Event,
     on_log: callable,
     on_progress: callable,
+    video_title: str = None,
 ) -> dict:
     """Run the full notes-generation pipeline.
 
@@ -122,6 +124,7 @@ def run_pipeline(
         return _run_llm_pipeline(
             chapters, chapter_texts, output_dir, provider, endpoint_url,
             api_key, model_name, cancel_event, on_log, on_progress,
+            video_title=video_title,
         )
 
     except Exception as e:
@@ -140,6 +143,7 @@ def run_pipeline_from_data(
     cancel_event,
     on_log: callable,
     on_progress: callable,
+    video_title: str = None,
 ) -> dict:
     """Run the pipeline from pre-extracted data (e.g. YouTube URL extraction).
 
@@ -168,6 +172,7 @@ def run_pipeline_from_data(
         return _run_llm_pipeline(
             chapters, chapter_texts, output_dir, provider, endpoint_url,
             api_key, model_name, cancel_event, on_log, on_progress,
+            video_title=video_title,
         )
 
     except Exception as e:
@@ -178,6 +183,7 @@ def run_pipeline_from_data(
 def _run_llm_pipeline(
     chapters, chapter_texts, output_dir, provider, endpoint_url,
     api_key, model_name, cancel_event, on_log, on_progress,
+    video_title: str = None,
 ):
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
     detailed_path = ""
@@ -352,7 +358,7 @@ def _run_llm_pipeline(
         # ------------------------------------------------------------------
         on_log("Assembling Course_Detailed_Notes.md...")
         title_intro = (
-            "# Course Detailed Revision Notes\n\n"
+            f"# {video_title or 'Course'} Detailed Revision Notes\n\n"
             "This document contains comprehensive chapter-by-chapter revision "
             "notes and study material.\n\n"
             "## Table of Contents\n"
@@ -396,7 +402,8 @@ def _run_llm_pipeline(
             title_intro + toc + "\n\n".join(detailed_notes_sections)
         )
 
-        detailed_path = os.path.join(output_dir, "Course_Detailed_Notes.md")
+        slug = _slugify(video_title) if video_title else "Course"
+        detailed_path = os.path.join(output_dir, f"{slug}_Detailed_Notes.md")
         with open(detailed_path, "w", encoding="utf-8") as f:
             f.write(full_detailed_content)
         on_log(f"Detailed notes saved to: {detailed_path}")
@@ -428,7 +435,7 @@ def _run_llm_pipeline(
             f"---\n{notes_excerpt}\n---\n\n"
             f'Based on the course outline and the notes above, generate a '
             f'comprehensive, standalone '
-            f'"# Course Practical Cheat-Sheet & Summary".\n\n'
+            f'"{video_title or "Course"} Practical Cheat-Sheet & Summary".\n\n'
             f"This cheat-sheet must focus only on the most important, "
             f"high-impact features and techniques covered in the course "
             f'(the "must-know" elements for real-world application).\n\n'
@@ -452,7 +459,7 @@ def _run_llm_pipeline(
         try:
             if cancel_event.is_set():
                 practical_summary = (
-                    "# Course Practical Cheat-Sheet & Summary\n\n"
+                    f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
                     "[Skipped due to pipeline cancellation]\n"
                 )
             else:
@@ -472,11 +479,11 @@ def _run_llm_pipeline(
         except Exception as e:
             on_log(f"ERROR generating practical summary: {e}")
             practical_summary = (
-                "# Course Practical Cheat-Sheet & Summary\n\n"
+                f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
                 f"[Failed to generate cheat-sheet using LLM: {e}]\n"
             )
 
-        practical_path = os.path.join(output_dir, "Course_Practical_Notes.md")
+        practical_path = os.path.join(output_dir, f"{slug}_Practical_Notes.md")
         with open(practical_path, "w", encoding="utf-8") as f:
             f.write(practical_summary)
         on_log(f"Practical notes saved to: {practical_path}")
@@ -511,12 +518,5 @@ def _run_llm_pipeline(
 
 def _slugify(title: str) -> str:
     """Convert a chapter title into a Markdown-anchor-compatible slug."""
-    return (
-        title.lower()
-        .replace(" ", "-")
-        .replace("?", "")
-        .replace("&", "")
-        .replace("(", "")
-        .replace(")", "")
-        .replace(".", "")
-    )
+    title = title.lower().replace(" ", "-")
+    return re.sub(r'[^a-z0-9_\-]', '', title)

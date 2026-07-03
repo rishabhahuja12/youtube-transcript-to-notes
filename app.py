@@ -457,6 +457,8 @@ def main():
     timestamps_path_var = tk.StringVar()
     output_dir_var = tk.StringVar()
     youtube_url_var = tk.StringVar()
+    topic_title_var = tk.StringVar()
+    pdf_theme_var = tk.StringVar(value="Textbook")
 
     # ── Console log helper with file mirroring ──
     def log_message(msg):
@@ -533,6 +535,9 @@ def main():
             if not timestamps_path or not os.path.exists(timestamps_path):
                 messagebox.showerror("Validation Error", "Please provide a valid timestamps file path.")
                 return
+            if not topic_title_var.get().strip():
+                messagebox.showerror("Validation Error", "Please provide a Topic / Title.")
+                return
 
         cancel_event.clear()
         start_btn.pack_forget()
@@ -591,6 +596,7 @@ def main():
                         cancel_event=cancel_event,
                         on_log=log_message,
                         on_progress=on_progress,
+                        video_title=data.get('metadata', {}).get('title'),
                     )
                 else:
                     result = run_pipeline(
@@ -604,6 +610,7 @@ def main():
                         cancel_event=cancel_event,
                         on_log=log_message,
                         on_progress=on_progress,
+                        video_title=topic_title_var.get().strip(),
                     )
                 
                 if result["success"]:
@@ -716,7 +723,8 @@ def main():
         else:
             tr = transcript_path_var.get().strip()
             ts = timestamps_path_var.get().strip()
-            if tr and ts and out:
+            title = topic_title_var.get().strip()
+            if tr and ts and out and title:
                 valid = True
         
         try:
@@ -731,6 +739,7 @@ def main():
     output_dir_var.trace_add("write", validate_inputs)
     transcript_path_var.trace_add("write", validate_inputs)
     timestamps_path_var.trace_add("write", validate_inputs)
+    topic_title_var.trace_add("write", validate_inputs)
 
     input_tabs = ctk.CTkTabview(input_card, corner_radius=10, height=180,
                                  segmented_button_fg_color="#27272a",
@@ -764,13 +773,48 @@ def main():
     files_tab.grid_columnconfigure(1, weight=1)
 
     for row_idx, (label_text, var, browse_fn) in enumerate([
+        ("Topic / Title:", topic_title_var, None),
         ("Transcript File:", transcript_path_var, browse_transcript),
         ("Timestamps File:", timestamps_path_var, browse_timestamps),
         ("Output Directory:", output_dir_var, browse_output_dir),
     ]):
         ctk.CTkLabel(files_tab, text=label_text, font=("Segoe UI", 11, "bold")).grid(row=row_idx, column=0, sticky="w", pady=6, padx=(5, 10))
-        ctk.CTkEntry(files_tab, textvariable=var, font=("Segoe UI", 10), placeholder_text=f"Select {label_text.lower().replace(':', '...')}").grid(row=row_idx, column=1, sticky="we", pady=6, padx=5)
-        ctk.CTkButton(files_tab, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_fn).grid(row=row_idx, column=2, sticky="e", pady=6, padx=(5, 5))
+        placeholder = f"Enter {label_text.lower().replace(':', '')}..." if not browse_fn else f"Select {label_text.lower().replace(':', '')}..."
+        ctk.CTkEntry(files_tab, textvariable=var, font=("Segoe UI", 10), placeholder_text=placeholder).grid(row=row_idx, column=1, sticky="we", pady=6, padx=5)
+        if browse_fn:
+            ctk.CTkButton(files_tab, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_fn).grid(row=row_idx, column=2, sticky="e", pady=6, padx=(5, 5))
+
+    # ── PDF Tools Tab ──
+    pdf_tab = input_tabs.add("PDF Tools")
+    pdf_tab.grid_columnconfigure(1, weight=1)
+
+    ctk.CTkLabel(pdf_tab, text="Convert any standalone Markdown file to PDF.",
+                 font=("Segoe UI", 10), text_color="#a1a1aa").grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 8))
+
+    ctk.CTkLabel(pdf_tab, text="PDF Theme:", font=("Segoe UI", 11, "bold")).grid(row=1, column=0, sticky="w", padx=5, pady=4)
+    
+    ctk.CTkOptionMenu(
+        pdf_tab, variable=pdf_theme_var,
+        values=["Textbook", "Dark Academic", "Minimal Mono"],
+        font=("Segoe UI", 11)
+    ).grid(row=1, column=1, sticky="w", padx=5, pady=4)
+
+    pdf_btns_frame = ctk.CTkFrame(pdf_tab, fg_color="transparent")
+    pdf_btns_frame.grid(row=2, column=0, columnspan=2, sticky="we", padx=5, pady=(15, 0))
+    pdf_btns_frame.grid_columnconfigure(0, weight=1)
+    pdf_btns_frame.grid_columnconfigure(1, weight=1)
+
+    ctk.CTkButton(
+        pdf_btns_frame, text="Preview PDF",
+        font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+        command=lambda: preview_pdf(log_message, root, theme=pdf_theme_var.get())
+    ).grid(row=0, column=0, sticky="we", padx=(0, 5))
+
+    ctk.CTkButton(
+        pdf_btns_frame, text="Export to PDF",
+        font=("Segoe UI", 11, "bold"), fg_color="#3b82f6", hover_color="#2563eb",
+        command=lambda: convert_and_save_pdf(log_message, root, theme=pdf_theme_var.get())
+    ).grid(row=0, column=1, sticky="we", padx=(5, 0))
 
     input_tabs.set("YouTube URL")  # Default to YouTube tab
 
@@ -837,7 +881,6 @@ def main():
     )
     open_output_btn.pack(fill="x", pady=(0, 5))
 
-    pdf_theme_var = tk.StringVar(value="Textbook")
     pdf_theme_menu = ctk.CTkOptionMenu(
         actions_inner, variable=pdf_theme_var,
         values=["Textbook", "Dark Academic", "Minimal Mono"],
