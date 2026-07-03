@@ -23,7 +23,7 @@ import customtkinter as ctk
 
 from src.config import parse_env_file, get_llm_config
 from src.llm_client import APP_VERSION
-from src.pipeline import run_pipeline
+from src.pipeline import run_pipeline, run_pipeline_from_data
 
 # ─────────────────────────── Path Resolution ───────────────────────────
 
@@ -249,6 +249,7 @@ def main():
     transcript_path_var = tk.StringVar()
     timestamps_path_var = tk.StringVar()
     output_dir_var = tk.StringVar()
+    youtube_url_var = tk.StringVar()
 
     # ── Console log helper ──
     def log_message(msg):
@@ -343,6 +344,92 @@ def main():
 
         threading.Thread(target=process, daemon=True).start()
 
+    # ── YouTube URL Pipeline launcher ──
+    def start_youtube_pipeline_thread():
+        url = youtube_url_var.get().strip()
+        output_dir = output_dir_var.get().strip()
+        provider, endpoint_url, api_key, model_name = get_llm_config(ENV_PATH)
+
+        if not url:
+            messagebox.showerror("Validation Error", "Please paste a YouTube URL.")
+            return
+        if not output_dir or not os.path.isdir(output_dir):
+            messagebox.showerror("Validation Error", "Please select a valid output directory.")
+            return
+        if not endpoint_url:
+            messagebox.showerror("Validation Error", "No ENDPOINT_URL found in .env file. Please configure it.")
+            return
+        if not model_name:
+            messagebox.showerror("Validation Error", "No MODEL_NAME found in .env file. Please configure it.")
+            return
+
+        cancel_event.clear()
+        start_btn.pack_forget()
+        cancel_btn.configure(state="normal", text="Cancel Pipeline")
+        cancel_btn.pack(fill="x", side="bottom")
+
+        def on_progress(current, total):
+            progress_bar.set(current / total if total else 0)
+
+        def process():
+            try:
+                from src.youtube import extract_from_url
+                log_message("=== YOUTUBE EXTRACTION ===")
+                log_message(f"Extracting data from: {url}")
+
+                data = extract_from_url(url, on_log=log_message)
+
+                if not data['transcript_blocks']:
+                    log_message("ERROR: No transcript could be extracted.")
+                    root.after(0, lambda: messagebox.showerror("Error", "No transcript found for this video."))
+                    return
+                if not data['chapters']:
+                    log_message("ERROR: No chapters could be determined.")
+                    root.after(0, lambda: messagebox.showerror("Error", "No chapters found for this video."))
+                    return
+
+                log_message(f"Extraction complete. Starting LLM pipeline...")
+
+                result = run_pipeline_from_data(
+                    transcript_blocks=data['transcript_blocks'],
+                    chapters=data['chapters'],
+                    output_dir=output_dir,
+                    provider=provider,
+                    endpoint_url=endpoint_url,
+                    api_key=api_key,
+                    model_name=model_name,
+                    cancel_event=cancel_event,
+                    on_log=log_message,
+                    on_progress=on_progress,
+                )
+                if result["success"]:
+                    root.after(0, lambda: progress_bar.set(1.0))
+                    root.after(0, lambda: messagebox.showinfo(
+                        "Success",
+                        f"Processing completed successfully!\nNotes generated in:\n{output_dir}"
+                    ))
+                elif result.get("error"):
+                    root.after(0, lambda: messagebox.showerror("Pipeline Error", result["error"]))
+            except ImportError:
+                log_message("ERROR: youtube-transcript-api or yt-dlp not installed.")
+                log_message("Run: .venv\\Scripts\\pip install youtube-transcript-api yt-dlp")
+                root.after(0, lambda: messagebox.showerror(
+                    "Missing Libraries",
+                    "youtube-transcript-api and yt-dlp are required.\n\n"
+                    "Run in terminal:\n.venv\\Scripts\\pip install youtube-transcript-api yt-dlp"
+                ))
+            except Exception as e:
+                log_message(f"CRITICAL ERROR: {str(e)}")
+                root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
+            finally:
+                def restore_ui():
+                    cancel_btn.pack_forget()
+                    start_btn.pack(fill="x", side="bottom")
+                    progress_bar.set(0)
+                root.after(0, restore_ui)
+
+        threading.Thread(target=process, daemon=True).start()
+
     def cancel_pipeline():
         if messagebox.askyesno("Confirm Cancel", "Are you sure you want to cancel the pipeline?"):
             log_message("Cancel requested. Waiting for current chapter to finish...")
@@ -379,24 +466,50 @@ def main():
     top_container.grid_columnconfigure(0, weight=3)
     top_container.grid_columnconfigure(1, weight=1)
 
-    # Files card
-    files_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
-    files_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    # Input card with tabs
+    input_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+    input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
-    ctk.CTkLabel(files_card, text="Files & Output Selection", font=("Segoe UI", 14, "bold"), text_color="#3b82f6").pack(anchor="w", padx=15, pady=(12, 8))
+    input_tabs = ctk.CTkTabview(input_card, corner_radius=10, height=180,
+                                 segmented_button_fg_color="#27272a",
+                                 segmented_button_selected_color="#3b82f6",
+                                 segmented_button_selected_hover_color="#2563eb")
+    input_tabs.pack(fill="both", expand=True, padx=10, pady=(5, 10))
 
-    files_grid = ctk.CTkFrame(files_card, fg_color="transparent")
-    files_grid.pack(fill="x", padx=15, pady=5)
-    files_grid.grid_columnconfigure(1, weight=1)
+    # ── YouTube URL Tab (Default) ──
+    yt_tab = input_tabs.add("YouTube URL")
+    yt_tab.grid_columnconfigure(0, weight=1)
+
+    ctk.CTkLabel(yt_tab, text="Paste a YouTube video link below and select an output directory.",
+                 font=("Segoe UI", 10), text_color="#a1a1aa").grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 8))
+
+    ctk.CTkLabel(yt_tab, text="YouTube URL:", font=("Segoe UI", 11, "bold")).grid(row=1, column=0, sticky="w", padx=5, pady=4)
+    ctk.CTkEntry(yt_tab, textvariable=youtube_url_var, font=("Segoe UI", 10),
+                 placeholder_text="https://www.youtube.com/watch?v=...").grid(row=2, column=0, columnspan=2, sticky="we", padx=5, pady=4)
+
+    ctk.CTkLabel(yt_tab, text="Output Directory:", font=("Segoe UI", 11, "bold")).grid(row=3, column=0, sticky="w", padx=5, pady=4)
+    yt_output_frame = ctk.CTkFrame(yt_tab, fg_color="transparent")
+    yt_output_frame.grid(row=4, column=0, columnspan=2, sticky="we", padx=5, pady=4)
+    yt_output_frame.grid_columnconfigure(0, weight=1)
+    ctk.CTkEntry(yt_output_frame, textvariable=output_dir_var, font=("Segoe UI", 10),
+                 placeholder_text="Select output directory...").grid(row=0, column=0, sticky="we", padx=(0, 5))
+    ctk.CTkButton(yt_output_frame, text="Browse", width=80, font=("Segoe UI", 10, "bold"),
+                  command=browse_output_dir).grid(row=0, column=1, sticky="e")
+
+    # ── Manual Files Tab ──
+    files_tab = input_tabs.add("Manual Files")
+    files_tab.grid_columnconfigure(1, weight=1)
 
     for row_idx, (label_text, var, browse_fn) in enumerate([
         ("Transcript File:", transcript_path_var, browse_transcript),
         ("Timestamps File:", timestamps_path_var, browse_timestamps),
         ("Output Directory:", output_dir_var, browse_output_dir),
     ]):
-        ctk.CTkLabel(files_grid, text=label_text, font=("Segoe UI", 11, "bold")).grid(row=row_idx, column=0, sticky="w", pady=6, padx=(0, 10))
-        ctk.CTkEntry(files_grid, textvariable=var, font=("Segoe UI", 10), placeholder_text=f"Select {label_text.lower().replace(':', '...')}").grid(row=row_idx, column=1, sticky="we", pady=6, padx=5)
-        ctk.CTkButton(files_grid, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_fn).grid(row=row_idx, column=2, sticky="e", pady=6, padx=(5, 0))
+        ctk.CTkLabel(files_tab, text=label_text, font=("Segoe UI", 11, "bold")).grid(row=row_idx, column=0, sticky="w", pady=6, padx=(5, 10))
+        ctk.CTkEntry(files_tab, textvariable=var, font=("Segoe UI", 10), placeholder_text=f"Select {label_text.lower().replace(':', '...')}").grid(row=row_idx, column=1, sticky="we", pady=6, padx=5)
+        ctk.CTkButton(files_tab, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_fn).grid(row=row_idx, column=2, sticky="e", pady=6, padx=(5, 5))
+
+    input_tabs.set("YouTube URL")  # Default to YouTube tab
 
     # Actions card
     actions_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
@@ -413,10 +526,18 @@ def main():
         command=lambda: _open_path(ENV_PATH) if os.path.exists(ENV_PATH) else None
     ).pack(fill="x", pady=(10, 15))
 
+    def get_active_start_command():
+        """Route to the correct pipeline based on active tab."""
+        active = input_tabs.get()
+        if active == "YouTube URL":
+            start_youtube_pipeline_thread()
+        else:
+            start_pipeline_thread()
+
     start_btn = ctk.CTkButton(
         actions_inner, text="Start Pipeline",
         font=("Segoe UI", 13, "bold"), fg_color="#10b981", hover_color="#059669",
-        text_color="#ffffff", height=45, command=start_pipeline_thread
+        text_color="#ffffff", height=45, command=get_active_start_command
     )
     start_btn.pack(fill="x", side="bottom")
 
