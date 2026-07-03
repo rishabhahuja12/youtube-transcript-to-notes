@@ -514,9 +514,13 @@ def main():
             if not endpoint_url or not model_name:
                 raise ValueError("Incomplete credentials")
         except Exception:
-            # Fallback to env file if keyring fails or is incomplete (though keyring should be single source of truth now)
-            provider, endpoint_url, api_key, model_name = get_llm_config(ENV_PATH)
-
+            messagebox.showerror(
+                "Missing Credentials",
+                "No valid credentials found in the system keyring. Please configure them via API Setup / Credentials.",
+                parent=root,
+            )
+            _show_env_help_popup(root)
+            return
         if not output_dir or not os.path.isdir(output_dir):
             messagebox.showerror("Validation Error", "Please provide a valid output directory.")
             return
