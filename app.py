@@ -408,8 +408,9 @@ def convert_and_save_pdf(log_fn, root):
             log_fn(f"SUCCESS: Saved PDF to {pdf_file}")
             root.after(0, lambda: messagebox.showinfo("Success", f"PDF saved successfully to:\n{pdf_file}"))
         except Exception as e:
-            log_fn(f"ERROR converting PDF: {str(e)}")
-            root.after(0, lambda: messagebox.showerror("Error", f"Failed to convert PDF: {str(e)}"))
+            err_msg = str(e)
+            log_fn(f"ERROR converting PDF: {err_msg}")
+            root.after(0, lambda: messagebox.showerror("Error", f"Failed to convert PDF:\n{err_msg}"))
 
     threading.Thread(target=run_conversion, daemon=True).start()
 
@@ -500,8 +501,9 @@ def preview_pdf(log_fn, root):
             log_fn("SUCCESS: Preview generated. Opening...")
             _open_path(temp_pdf)
         except Exception as e:
-            log_fn(f"ERROR generating preview: {str(e)}")
-            root.after(0, lambda: messagebox.showerror("Error", f"Failed to generate preview: {str(e)}"))
+            err_msg = str(e)
+            log_fn(f"ERROR generating preview: {err_msg}")
+            root.after(0, lambda: messagebox.showerror("Error", f"Failed to generate preview:\n{err_msg}"))
 
     threading.Thread(target=run_preview, daemon=True).start()
 
