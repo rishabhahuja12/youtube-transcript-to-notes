@@ -102,8 +102,7 @@ class AdaptiveRateLimiter:
                 current_tpm = sum(t[1] for t in self.token_log)
                 
                 rpm_ok = current_rpm < self.rpm_limit
-                tpm_ok = (current_tpm + estimated_tokens) < self.tpm_limit
-                
+                tpm_ok = (current_tpm + estimated_tokens) <= self.tpm_limit
                 if rpm_ok and tpm_ok:
                     # Record this request
                     now = time.time()
