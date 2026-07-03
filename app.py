@@ -99,7 +99,6 @@ def _show_env_help_popup(root):
     help_win.resizable(False, False)
     help_win.transient(root)
     help_win.grab_set()
-    help_win.attributes("-topmost", True)
 
     ctk.CTkLabel(
         help_win, text="Welcome! Let's set up your LLM provider.",
