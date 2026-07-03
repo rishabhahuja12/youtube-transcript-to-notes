@@ -31,26 +31,47 @@ def fetch_transcript(video_id: str, language: str = 'en') -> list:
     Raises ImportError if library not installed, Exception on failure."""
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    try:
-        # Try to get the requested language transcript
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
-        return transcript
-    except Exception:
-        pass
+    # Determine if API is the older class-method style or newer instance-based style
+    if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+        try:
+            # Try to get the requested language transcript
+            return YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
+        except Exception:
+            pass
 
-    try:
-        # Fallback: try any available transcript
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        # Prefer manual transcripts
-        for t in transcript_list:
-            if not t.is_generated:
-                return t.fetch()
-        # Fall back to auto-generated
-        for t in transcript_list:
-            if t.is_generated:
-                return t.fetch()
-    except Exception as e:
-        raise Exception(f"Could not fetch transcript for video {video_id}: {str(e)}")
+        try:
+            # Fallback: try any available transcript
+            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            # Prefer manual transcripts
+            for t in transcript_list:
+                if not t.is_generated:
+                    return t.fetch()
+            # Fall back to auto-generated
+            for t in transcript_list:
+                if t.is_generated:
+                    return t.fetch()
+        except Exception as e:
+            raise Exception(f"Could not fetch transcript for video {video_id}: {str(e)}")
+    else:
+        # Instance-based API (v1.2.4+)
+        api = YouTubeTranscriptApi()
+        try:
+            return list(api.fetch(video_id, languages=[language]))
+        except Exception:
+            pass
+
+        try:
+            transcript_list = api.list(video_id)
+            # Prefer manual transcripts
+            for t in transcript_list:
+                if not t.is_generated:
+                    return list(t.fetch())
+            # Fall back to auto-generated
+            for t in transcript_list:
+                if t.is_generated:
+                    return list(t.fetch())
+        except Exception as e:
+            raise Exception(f"Could not fetch transcript for video {video_id}: {str(e)}")
 
     raise Exception(f"No transcripts available for video {video_id}")
 
@@ -86,10 +107,16 @@ def transcript_to_blocks(transcript_entries: list) -> list:
     Output: [(start_sec, end_sec, text), ...]"""
     blocks = []
     for entry in transcript_entries:
-        start = int(entry['start'])
-        duration = entry.get('duration', 0)
-        end = int(entry['start'] + duration)
-        text = entry['text'].strip()
+        if isinstance(entry, dict):
+            start = int(entry['start'])
+            duration = entry.get('duration', 0)
+            text = entry['text'].strip()
+        else:
+            start = int(entry.start)
+            duration = getattr(entry, 'duration', 0)
+            text = entry.text.strip()
+            
+        end = int(start + duration)
         if text:
             blocks.append((start, end, text))
     return blocks
@@ -121,7 +148,15 @@ def auto_chunk_transcript(transcript_entries: list, chunk_minutes: int = 5) -> l
     if not transcript_entries:
         return []
 
-    total_duration = int(transcript_entries[-1]['start'] + transcript_entries[-1].get('duration', 0))
+    last = transcript_entries[-1]
+    if isinstance(last, dict):
+        last_start = last['start']
+        last_duration = last.get('duration', 0)
+    else:
+        last_start = last.start
+        last_duration = getattr(last, 'duration', 0)
+
+    total_duration = int(last_start + last_duration)
     chunk_seconds = chunk_minutes * 60
     chapters = []
 
