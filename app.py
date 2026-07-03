@@ -507,6 +507,7 @@ def start_pipeline_thread():
     def process():
         try:
             log_message("=== PIPELINE STARTED ===")
+            log_message(f"Active LLM: {provider} / {model_name} @ {endpoint_url}")
             
             # Step 1: Read and parse chapters from outline
             log_message("Step 1: Parsing outline and normalizing timestamps...")
