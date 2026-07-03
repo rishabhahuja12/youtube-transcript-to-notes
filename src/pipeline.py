@@ -111,6 +111,72 @@ def run_pipeline(
         on_log("Assigning segments to chapters...")
         chapter_texts = assign_chapters(merged, chapters)
 
+        return _run_llm_pipeline(
+            chapters, chapter_texts, output_dir, provider, endpoint_url,
+            api_key, model_name, cancel_event, on_log, on_progress,
+        )
+
+    except Exception as e:
+        on_log(f"CRITICAL ERROR in pipeline: {str(e)}")
+        return {"success": False, "detailed_path": "", "practical_path": "", "error": str(e)}
+
+
+def run_pipeline_from_data(
+    transcript_blocks: list,
+    chapters: list,
+    output_dir: str,
+    provider: str,
+    endpoint_url: str,
+    api_key: str,
+    model_name: str,
+    cancel_event,
+    on_log: callable,
+    on_progress: callable,
+) -> dict:
+    """Run the pipeline from pre-extracted data (e.g. YouTube URL extraction).
+
+    Parameters
+    ----------
+    transcript_blocks : list
+        List of ``(start_sec, end_sec, text)`` tuples.
+    chapters : list
+        List of dicts ``{"time": "H:MM:SS", "title": str, "section": str}``.
+    """
+    try:
+        on_log("=== PIPELINE STARTED ===")
+        on_log(f"Active LLM: {provider} / {model_name} @ {endpoint_url}")
+
+        for c in chapters:
+            c["time_sec"] = parse_time_str(c["time"])
+        chapters.sort(key=lambda c: c["time_sec"])
+
+        on_log(f"Working with {len(transcript_blocks)} transcript blocks and {len(chapters)} chapters.")
+        merged = dedupe_merge(transcript_blocks)
+        on_log(f"Deduplication complete. Total continuous chunks: {len(merged)}.")
+
+        on_log("Assigning segments to chapters...")
+        chapter_texts = assign_chapters(merged, chapters)
+
+        return _run_llm_pipeline(
+            chapters, chapter_texts, output_dir, provider, endpoint_url,
+            api_key, model_name, cancel_event, on_log, on_progress,
+        )
+
+    except Exception as e:
+        on_log(f"CRITICAL ERROR in pipeline: {str(e)}")
+        return {"success": False, "detailed_path": "", "practical_path": "", "error": str(e)}
+
+
+def _run_llm_pipeline(
+    chapters, chapter_texts, output_dir, provider, endpoint_url,
+    api_key, model_name, cancel_event, on_log, on_progress,
+):
+    """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
+    detailed_path = ""
+    practical_path = ""
+
+    try:
+
         # ------------------------------------------------------------------
         # Step 3: Call LLM for each chapter
         # ------------------------------------------------------------------
