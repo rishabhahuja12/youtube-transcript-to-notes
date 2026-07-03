@@ -6,3 +6,5 @@ __pycache__/
 .DS_Store
 config.json
 .env
+.checkpoint.json
+pipeline.log

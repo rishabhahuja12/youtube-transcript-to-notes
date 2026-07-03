@@ -1,143 +1,86 @@
-# YouTube Transcript to Notes
+# YouTube Transcript to Notes Pipeline (v2.0)
 
-A desktop application that transforms YouTube video transcripts into structured, detailed revision notes and practical cheat-sheets using AI.
+A powerful, automated tool for generating highly detailed, structured study notes from YouTube videos. Version 2.0 introduces a modern dark-mode GUI, full autonomous YouTube extraction, intelligent API rate-limiting, and secure credential storage.
 
-## What It Does
+## Features
 
-1. **Parses** raw YouTube transcript files (with timestamps) and chapter outlines
-2. **Segments** the transcript into chapters using timestamp boundaries
-3. **Deduplicates** overlapping caption windows for clean text
-4. **Generates** two types of study materials via your chosen LLM:
-   - **Detailed Revision Notes** — chapter-by-chapter deep-dive with summaries, key concepts, formulas, examples, pitfalls, and quick-revision recaps
-   - **Practical Cheat-Sheet** — a consolidated reference guide with comparison tables, diagrams, shortcuts, and step-by-step instructions
-5. **Converts** the generated Markdown files to PDF (optional)
+### 🌟 New in v2.0
+- **Full YouTube Autonomy**: Paste a YouTube URL, and the app automatically extracts the video ID, fetches the transcript, detects chapter markers (via YouTube chapters, descriptions, or auto-chunking), and generates the notes.
+- **Modern Tabbed UI**: Beautiful dark-mode interface powered by `customtkinter` with progress bars, status indicators, and mirrored console logging.
+- **Intelligent API Pacing**: An Adaptive Rate Limiter proactively manages Requests Per Minute (RPM) and Tokens Per Minute (TPM) based on your provider (e.g., Groq, OpenRouter, Ollama) so you never hit `429 Too Many Requests` errors.
+- **Checkpoint & Resume**: If you cancel or the app crashes halfway, it saves its progress in `.checkpoint.json`. On restart, it skips the chapters it has already processed.
+- **Secure Credential Storage**: No more `.env` files lying around. API keys are securely stored in your OS's native Credential Manager (Windows Keyring) via an interactive UI dialog.
+- **Pre-flight Estimation**: See estimated time, input tokens, and output tokens before the pipeline starts.
 
-## Prerequisites
+### 📝 Core Capabilities
+- **Detailed Notes**: Uses LLMs (Local or Cloud) to generate summary, key concepts, code blocks, syntax formulas, examples, and pitfalls for every single chapter.
+- **Practical Cheat-Sheet**: Automatically synthesizes the detailed notes into a highly condensed single-page practical guide.
+- **PDF Conversion**: One-click Markdown-to-PDF utility built into the UI.
 
+## Installation
+
+### Prerequisites
+- Windows 10/11
 - Python 3.10+
-- An LLM provider (any one of the following):
-  - [Ollama](https://ollama.com/) running locally (free, no API key needed)
-  - [Grok API](https://console.x.ai/) (free tier available)
-  - [OpenRouter](https://openrouter.ai/) (free models available, e.g. DeepSeek R1)
-  - [Groq](https://console.groq.com/) (free tier, very fast)
-  - Any OpenAI-compatible endpoint
 
-## Setup
+### Setup
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/rishabhahuja12/youtube-transcript-to-notes.git
+   cd youtube-transcript-to-notes
+   ```
 
-### 1. Clone the Repository
+2. **Create a virtual environment and activate it:**
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
 
-```bash
-git clone https://github.com/rishabhahuja12/youtube-transcript-to-notes.git
-cd youtube-transcript-to-notes
-```
-
-### 2. Create a Virtual Environment
-
-```bash
-python -m venv .venv
-```
-
-### 3. Install Dependencies
-
-```bash
-# Windows
-.venv\Scripts\pip install customtkinter
-
-# macOS / Linux
-.venv/bin/pip install customtkinter
-```
-
-### 4. Configure Your LLM Provider
-
-Copy the example config and fill in your details:
-
-```bash
-cp .env.example .env
-```
-
-Open `.env` in any text editor and set your provider:
-
-```env
-# For local Ollama (no API key needed):
-PROVIDER=Ollama
-ENDPOINT_URL=http://localhost:11434
-API_KEY=
-MODEL_NAME=llama3
-
-# For Grok API:
-PROVIDER=OpenAI Compatible
-ENDPOINT_URL=https://api.x.ai/v1
-API_KEY=xai-your-key-here
-MODEL_NAME=grok-beta
-
-# For OpenRouter (free DeepSeek R1):
-PROVIDER=OpenAI Compatible
-ENDPOINT_URL=https://openrouter.ai/api/v1
-API_KEY=sk-or-v1-your-key-here
-MODEL_NAME=deepseek/deepseek-r1:free
-
-# For Groq (free tier):
-PROVIDER=OpenAI Compatible
-ENDPOINT_URL=https://api.groq.com/openai/v1
-API_KEY=gsk_your-key-here
-MODEL_NAME=llama-3.3-70b-versatile
-```
-
-> **Security Note:** The `.env` file is gitignored and will never be committed to the repository. Your API keys stay local on your machine only.
-
-### 5. Run the Application
-
-```bash
-# Windows
-.venv\Scripts\python app.py
-
-# macOS / Linux
-.venv/bin/python app.py
-```
-
-On first launch, if no `.env` is found, a setup help popup will guide you through the configuration.
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ## Usage
 
-1. **Select your files** in the app:
-   - **Transcript File** — the raw `.txt` transcript with timestamps
-   - **Timestamps File** — the chapter outline / timestamps list
-   - **Output Directory** — where the generated notes will be saved
+1. **Launch the App:**
+   ```bash
+   python app.py
+   ```
 
-2. **Click "Start Processing Pipeline"**
-   - The app reads your LLM config from `.env`
-   - Parses and segments the transcript
-   - Calls the LLM for each chapter to generate detailed notes
-   - Generates a practical summary cheat-sheet
-   - Saves `Course_Detailed_Notes.md` and `Course_Practical_Notes.md`
+2. **First Run Setup:**
+   On your first launch, the app will prompt you with an "API Configuration Setup" dialog. 
+   - Select your provider (Groq, OpenRouter, Ollama, etc.)
+   - Provide your API Key and Model Name.
+   - Credentials are saved securely to Windows Credential Manager.
 
-3. **(Optional) Convert to PDF**
-   - Click **"Install PDF Library"** (one-time, installs `markdown-pdf`)
-   - Click **"Convert & Save PDF"** to pick a `.md` file and export as PDF
+3. **Generate Notes:**
+   - **YouTube URL Tab (Recommended):** Paste any YouTube URL (watch, youtu.be, embed, etc.), select an output folder, and click **Start Pipeline**.
+   - **Manual Files Tab:** If you have offline transcripts/timestamps, you can manually select them and run the pipeline.
 
-## Project Structure
+4. **Output:**
+   The app will generate two markdown files in your selected output directory:
+   - `Course_Detailed_Notes.md` (Chapter-by-chapter comprehensive notes)
+   - `Course_Practical_Guide.md` (Quick cheat-sheet)
 
+## Architecture
+
+The v2.0 architecture was fully refactored for modularity, testability, and UI separation:
+- `app.py`: UI entry point (CustomTkinter). No logic.
+- `src/youtube.py`: YouTube extraction via `youtube-transcript-api` and `yt-dlp`.
+- `src/pipeline.py`: Core orchestration, rate-limiting logic, and checkpointing.
+- `src/parser.py`: Transcript deduplication, outline parsing, and text alignment. Tested with Pytest (44 tests).
+- `src/llm_client.py`: Raw API communication and token bucket rate limiter.
+- `src/credentials.py`: System keyring wrapper for secure storage.
+
+## Testing
+
+To run the unit test suite:
+```bash
+pytest tests/ -v
 ```
-youtube-transcript-to-notes/
-├── app.py              # Main desktop application
-├── .env.example        # Template for LLM configuration
-├── .env                # Your local config (gitignored)
-├── .gitignore          # Git ignore rules
-├── skills.md           # Pipeline skill definition and templates
-├── scripts/
-│   ├── parse_outline.py        # Standalone outline parser
-│   └── segment_transcript.py   # Standalone transcript segmenter
-└── README.md
-```
 
-## How the LLM Config Works
+## Troubleshooting
 
-- **No credentials are ever shown in the UI or committed to git.**
-- LLM provider settings are stored in a `.env` file in the project root.
-- The app reads this file at runtime when you click "Start Processing Pipeline".
-- A read-only status panel in the UI shows the currently loaded provider/model (API keys are masked).
-- You can click **"Edit .env"** in the app to open the file, or **"Refresh LLM Config"** after editing.
-
-## License
-
-MIT
+- **Rate Limits?** The app automatically paces itself based on your provider. If you switch from Groq to an unlimited Local Ollama model, go to `API Setup / Credentials` in the UI to update your provider and remove the pacing restrictions.
+- **YouTube Extraction Fails?** Ensure you have the latest `yt-dlp` installed, as YouTube frequently updates their backend. (`pip install -U yt-dlp`)
