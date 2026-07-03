@@ -60,6 +60,36 @@ def load_config(transcript_var, timestamps_var, output_var):
             pass
 
 
+def load_recent_outputs():
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data.get("recent_outputs", [])
+    except Exception:
+        return []
+
+def add_recent_output(path):
+    if not path or not os.path.isdir(path): return
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    
+    recents = data.get("recent_outputs", [])
+    if path in recents:
+        recents.remove(path)
+    recents.insert(0, path)
+    recents = recents[:5]
+    data["recent_outputs"] = recents
+    
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+    except Exception:
+        pass
+
+
 def save_config(transcript_var, timestamps_var, output_var):
     """Persist file paths to config.json (no credentials stored here)."""
     data = {
@@ -81,11 +111,7 @@ def check_env_and_show_help(root):
     """On first run, check if credentials exist. If not, show setup dialog."""
     from src.credentials import has_stored_credentials
     
-    if has_stored_credentials():
-        return
-        
-    env = parse_env_file(ENV_PATH)
-    if not env or not env.get("MODEL_NAME"):
+    if not has_stored_credentials():
         root.after(500, lambda: _show_env_help_popup(root))
 
 
@@ -188,84 +214,118 @@ def _show_env_help_popup(root):
 
 
 def install_pdf_library(log_fn, root):
-    """Install markdown-pdf into the local .venv."""
+    """Install playwright, markdown, and pygments into the local .venv."""
     pip_path = os.path.join(SCRIPT_DIR, ".venv", "Scripts", "pip")
+    playwright_path = os.path.join(SCRIPT_DIR, ".venv", "Scripts", "playwright")
     if os.path.exists(pip_path + ".exe"):
         pip_path += ".exe"
+    if os.path.exists(playwright_path + ".exe"):
+        playwright_path += ".exe"
 
     def run_install():
-        log_fn("Running pip install markdown-pdf in virtual environment...")
+        log_fn("Running pip install playwright markdown pygments...")
         try:
-            process = subprocess.Popen(
-                [pip_path, "install", "markdown-pdf"],
+            process1 = subprocess.Popen(
+                [pip_path, "install", "playwright", "markdown", "pygments"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 shell=False,
             )
-            for line in process.stdout:
+            for line in process1.stdout:
                 log_fn(line.strip())
-            process.wait()
-            if process.returncode == 0:
-                log_fn("SUCCESS: markdown-pdf installed successfully!")
-                root.after(0, lambda: messagebox.showinfo("Success", "markdown-pdf installed successfully! No external dependencies required."))
+            process1.wait()
+            
+            if process1.returncode != 0:
+                log_fn(f"ERROR: Pip installation failed with exit code {process1.returncode}")
+                root.after(0, lambda: messagebox.showerror("Error", f"Pip installation failed with exit code {process1.returncode}"))
+                return
+
+            log_fn("Installing chromium for playwright...")
+            if not os.path.exists(playwright_path) and not os.path.exists(playwright_path + ".exe"):
+                # fallback if playwright script isn't found
+                playwright_path_to_use = "playwright"
             else:
-                log_fn(f"ERROR: Installation failed with exit code {process.returncode}")
-                root.after(0, lambda: messagebox.showerror("Error", f"Installation failed with exit code {process.returncode}"))
+                playwright_path_to_use = playwright_path
+
+            process2 = subprocess.Popen(
+                [playwright_path_to_use, "install", "chromium"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                shell=False,
+            )
+            for line in process2.stdout:
+                log_fn(line.strip())
+            process2.wait()
+            
+            if process2.returncode == 0:
+                log_fn("SUCCESS: Playwright installed successfully!")
+                root.after(0, lambda: messagebox.showinfo("Success", "Playwright and dependencies installed successfully!"))
+            else:
+                log_fn(f"ERROR: Chromium installation failed with exit code {process2.returncode}")
+                root.after(0, lambda: messagebox.showerror("Error", f"Chromium installation failed with exit code {process2.returncode}"))
+
         except Exception as e:
-            log_fn(f"ERROR running pip: {str(e)}")
-            root.after(0, lambda: messagebox.showerror("Error", f"Failed to invoke pip: {str(e)}"))
+            log_fn(f"ERROR running install: {str(e)}")
+            root.after(0, lambda: messagebox.showerror("Error", f"Failed to invoke install commands: {str(e)}"))
 
     threading.Thread(target=run_install, daemon=True).start()
 
 
-def _get_shared_pdf_css():
+def _get_shared_pdf_css(theme="Textbook"):
     """Return the custom CSS used for both preview and export."""
-    return """
-    body { font-family: 'Segoe UI', Helvetica, sans-serif; line-height: 1.5; color: #1f2937; }
-    h1 { color: #1e3a8a; font-size: 26pt; border-bottom: 3px solid #3b82f6; padding-bottom: 6px; margin-top: 0; }
-    h2 { color: #2563eb; font-size: 18pt; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; margin-top: 0; }
-    h3 { color: #047857; font-size: 14pt; margin-top: 1.2em; }
-    h4 { color: #6d28d9; font-size: 12pt; }
-    p { margin-bottom: 1em; }
-    li { margin-bottom: 0.5em; }
-    pre { background-color: #f8fafc; padding: 12px; border-left: 4px solid #94a3b8; font-family: 'Courier New', Courier, monospace; font-size: 10pt; white-space: pre-wrap; }
-    code { background-color: #f1f5f9; color: #be123c; padding: 2px 5px; font-family: 'Courier New', Courier, monospace; }
-    blockquote { border-left: 4px solid #3b82f6; background-color: #eff6ff; padding: 10px 15px; color: #4b5563; font-style: italic; }
+    base_css = """
+    body { font-family: 'Segoe UI', Helvetica, sans-serif; line-height: 1.5; }
+    h1 { break-before: page; margin-top: 0; }
+    h1:first-of-type { break-before: auto; }
     table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-    th { background-color: #e2e8f0; font-weight: bold; padding: 10px; border: 1px solid #cbd5e1; color: #0f172a; text-align: left; }
-    td { padding: 10px; border: 1px solid #cbd5e1; }
-    tr:nth-child(even) { background-color: #f8fafc; }
-    a { color: #2563eb; text-decoration: none; }
+    @page { margin: 20mm; }
     """
-
-def _build_pdf_document(md_content):
-    """Build a MarkdownPdf object using the manual section splitting technique to enforce page breaks natively."""
-    from markdown_pdf import MarkdownPdf, Section
-    pdf = MarkdownPdf(toc_level=2, optimize=True)
-    custom_css = _get_shared_pdf_css()
     
-    lines = md_content.split('\n')
-    chunks = []
-    current_chunk = []
-    
-    for line in lines:
-        if line.startswith('# ') or line.startswith('## '):
-            if current_chunk:
-                chunks.append('\n'.join(current_chunk))
-                current_chunk = []
-        current_chunk.append(line)
-    
-    if current_chunk:
-        chunks.append('\n'.join(current_chunk))
+    if theme == "Textbook":
+        theme_css = """
+        body { color: #1f2937; }
+        h1 { color: #1e3a8a; font-size: 26pt; border-bottom: 3px solid #3b82f6; padding-bottom: 6px; }
+        h2 { color: #2563eb; font-size: 18pt; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; }
+        h3 { color: #047857; font-size: 14pt; margin-top: 1.2em; }
+        pre { background-color: #f8fafc; padding: 12px; border-left: 4px solid #94a3b8; font-family: 'Courier New', Courier, monospace; font-size: 10pt; white-space: pre-wrap; }
+        code { background-color: #f1f5f9; color: #be123c; padding: 2px 5px; font-family: 'Courier New', Courier, monospace; }
+        blockquote { border-left: 4px solid #3b82f6; background-color: #eff6ff; padding: 10px 15px; color: #4b5563; font-style: italic; }
+        th { background-color: #e2e8f0; font-weight: bold; padding: 10px; border: 1px solid #cbd5e1; color: #0f172a; text-align: left; }
+        td { padding: 10px; border: 1px solid #cbd5e1; }
+        tr:nth-child(even) { background-color: #f8fafc; }
+        a { color: #2563eb; text-decoration: none; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        """
+    elif theme == "Dark Academic":
+        theme_css = """
+        body { color: #e2e8f0; background-color: #0f172a; }
+        h1 { color: #fbbf24; font-size: 26pt; border-bottom: 3px solid #b45309; padding-bottom: 6px; }
+        h2 { color: #fcd34d; font-size: 18pt; border-bottom: 1px solid #475569; padding-bottom: 4px; }
+        h3 { color: #34d399; font-size: 14pt; margin-top: 1.2em; }
+        pre { background-color: #1e293b; padding: 12px; border-left: 4px solid #64748b; font-family: 'Courier New', Courier, monospace; font-size: 10pt; white-space: pre-wrap; color: #cbd5e1; }
+        code { background-color: #334155; color: #fca5a5; padding: 2px 5px; font-family: 'Courier New', Courier, monospace; }
+        blockquote { border-left: 4px solid #fbbf24; background-color: #1e293b; padding: 10px 15px; color: #94a3b8; font-style: italic; }
+        th { background-color: #334155; font-weight: bold; padding: 10px; border: 1px solid #475569; color: #f8fafc; text-align: left; }
+        td { padding: 10px; border: 1px solid #475569; }
+        tr:nth-child(even) { background-color: #1e293b; }
+        a { color: #60a5fa; text-decoration: none; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        """
+    else: # Minimal Mono
+        theme_css = """
+        body { font-family: 'Courier New', Courier, monospace; color: #000000; }
+        h1, h2, h3 { color: #000000; text-transform: uppercase; border-bottom: 1px solid #000000; margin-top: 1.2em; }
+        pre { background-color: #ffffff; padding: 12px; border: 1px solid #000000; white-space: pre-wrap; }
+        code { font-weight: bold; }
+        blockquote { border-left: 4px solid #000000; padding: 10px 15px; font-style: italic; }
+        th, td { border: 1px solid #000000; padding: 10px; }
+        """
         
-    for chunk in chunks:
-        if chunk.strip():
-            pdf.add_section(Section(chunk, toc=True), user_css=custom_css)
-            
-    return pdf
+    return base_css + theme_css
 
-def convert_and_save_pdf(log_fn, root):
+def convert_and_save_pdf(log_fn, root, theme="Textbook"):
     """Let the user pick a Markdown file and export it as PDF."""
     md_file = filedialog.askopenfilename(
         title="Select Markdown File to Convert",
@@ -286,19 +346,32 @@ def convert_and_save_pdf(log_fn, root):
 
     def run_conversion():
         try:
+            import asyncio
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            
             venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
             if os.path.exists(venv_site) and venv_site not in sys.path:
                 sys.path.append(venv_site)
             try:
-                import markdown_pdf
+                import markdown
+                from playwright.sync_api import sync_playwright
             except ImportError:
-                raise Exception("The 'markdown-pdf' library is not available. Please click 'Install PDF Library' first.")
+                raise Exception("Playwright or Markdown is not available. Please install them by running: pip install playwright markdown pygments && playwright install chromium")
 
             with open(md_file, "r", encoding="utf-8", errors="replace") as f:
                 md_content = f.read()
 
-            pdf = _build_pdf_document(md_content)
-            pdf.save(pdf_file)
+            html_content = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
+            custom_css = _get_shared_pdf_css(theme)
+            
+            full_html = f"<html><head><style>{custom_css}</style></head><body>{html_content}</body></html>"
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.set_content(full_html)
+                page.pdf(path=pdf_file, format="A4", margin={"top": "20px", "right": "20px", "bottom": "20px", "left": "20px"})
+                browser.close()
 
             log_fn(f"SUCCESS: Saved PDF to {pdf_file}")
             root.after(0, lambda: messagebox.showinfo("Success", f"PDF saved successfully to:\n{pdf_file}"))
@@ -310,7 +383,7 @@ def convert_and_save_pdf(log_fn, root):
     threading.Thread(target=run_conversion, daemon=True).start()
 
 
-def preview_pdf(log_fn, root):
+def preview_pdf(log_fn, root, theme="Textbook"):
     """Render the PDF to a temporary file and open it for preview."""
     import tempfile
     
@@ -325,21 +398,34 @@ def preview_pdf(log_fn, root):
 
     def run_preview():
         try:
+            import asyncio
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            
             venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
             if os.path.exists(venv_site) and venv_site not in sys.path:
                 sys.path.append(venv_site)
             try:
-                import markdown_pdf
+                import markdown
+                from playwright.sync_api import sync_playwright
             except ImportError:
-                raise Exception("The 'markdown-pdf' library is not available. Please click 'Install PDF Library' first.")
+                raise Exception("Playwright or Markdown is not available. Please install them by running: pip install playwright markdown pygments && playwright install chromium")
 
             with open(md_file, "r", encoding="utf-8", errors="replace") as f:
                 md_content = f.read()
 
-            pdf = _build_pdf_document(md_content)
+            html_content = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
+            custom_css = _get_shared_pdf_css(theme)
+            
+            full_html = f"<html><head><style>{custom_css}</style></head><body>{html_content}</body></html>"
 
             temp_pdf = os.path.join(tempfile.gettempdir(), "yt_transcriptor_preview.pdf")
-            pdf.save(temp_pdf)
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.set_content(full_html)
+                page.pdf(path=temp_pdf, format="A4", margin={"top": "20px", "right": "20px", "bottom": "20px", "left": "20px"})
+                browser.close()
 
             log_fn("SUCCESS: Preview generated. Opening...")
             _open_path(temp_pdf)
@@ -409,55 +495,117 @@ def main():
             output_dir_var.set(path)
 
     # ── Pipeline launcher ──
-    def start_pipeline_thread():
-        save_config(transcript_path_var, timestamps_path_var, output_dir_var)
-
-        transcript_path = transcript_path_var.get().strip()
-        timestamps_path = timestamps_path_var.get().strip()
+    def start_unified_pipeline():
+        active = input_tabs.get()
         output_dir = output_dir_var.get().strip()
-        provider, endpoint_url, api_key, model_name = get_llm_config(ENV_PATH)
+        
+        try:
+            from src.credentials import get_credentials
+            provider, endpoint_url, api_key, model_name = get_credentials()
+            if not endpoint_url or not model_name:
+                raise ValueError("Incomplete credentials")
+        except Exception:
+            # Fallback to env file if keyring fails or is incomplete (though keyring should be single source of truth now)
+            provider, endpoint_url, api_key, model_name = get_llm_config(ENV_PATH)
 
-        # Validation
-        if not transcript_path or not os.path.exists(transcript_path):
-            messagebox.showerror("Validation Error", "Please provide a valid transcript file path.")
-            return
-        if not timestamps_path or not os.path.exists(timestamps_path):
-            messagebox.showerror("Validation Error", "Please provide a valid timestamps file path.")
-            return
         if not output_dir or not os.path.isdir(output_dir):
             messagebox.showerror("Validation Error", "Please provide a valid output directory.")
             return
         if not endpoint_url:
-            messagebox.showerror("Validation Error", "No ENDPOINT_URL found in .env file. Please configure it.")
+            messagebox.showerror("Validation Error", "No ENDPOINT_URL found. Please configure it via API Setup.")
             return
         if not model_name:
-            messagebox.showerror("Validation Error", "No MODEL_NAME found in .env file. Please configure it.")
+            messagebox.showerror("Validation Error", "No MODEL_NAME found. Please configure it via API Setup.")
             return
+
+        if active == "YouTube URL":
+            url = youtube_url_var.get().strip()
+            if not url:
+                messagebox.showerror("Validation Error", "Please paste a YouTube URL.")
+                return
+        else:
+            save_config(transcript_path_var, timestamps_path_var, output_dir_var)
+            transcript_path = transcript_path_var.get().strip()
+            timestamps_path = timestamps_path_var.get().strip()
+            if not transcript_path or not os.path.exists(transcript_path):
+                messagebox.showerror("Validation Error", "Please provide a valid transcript file path.")
+                return
+            if not timestamps_path or not os.path.exists(timestamps_path):
+                messagebox.showerror("Validation Error", "Please provide a valid timestamps file path.")
+                return
 
         cancel_event.clear()
         start_btn.pack_forget()
         cancel_btn.configure(state="normal", text="Cancel Pipeline")
         cancel_btn.pack(fill="x", side="bottom")
         status_label.configure(text="Status: Running...", text_color="#fbbf24")
+        status_pill.configure(fg_color="#fbbf24")
+        
+        export_pdf_btn.pack_forget()
+        pdf_theme_menu.pack_forget()
+
+        progress_bar.configure(mode="indeterminate")
+        progress_bar.start()
+        step_label.configure(text="Initializing pipeline...")
 
         def on_progress(current, total):
-            progress_bar.set(current / total if total else 0)
+            def _update():
+                progress_bar.stop()
+                progress_bar.configure(mode="determinate")
+                progress_bar.set(current / total if total else 0)
+                if total > 0:
+                    step_label.configure(text=f"Step {current} of {total}...")
+                if current < total:
+                    root.after(1000, lambda: (progress_bar.configure(mode="indeterminate"), progress_bar.start()) if status_label.cget("text") == "Status: Running..." else None)
+            root.after(0, _update)
 
         def process():
             result = None
             try:
-                result = run_pipeline(
-                    transcript_path=transcript_path,
-                    timestamps_path=timestamps_path,
-                    output_dir=output_dir,
-                    provider=provider,
-                    endpoint_url=endpoint_url,
-                    api_key=api_key,
-                    model_name=model_name,
-                    cancel_event=cancel_event,
-                    on_log=log_message,
-                    on_progress=on_progress,
-                )
+                if active == "YouTube URL":
+                    from src.youtube import extract_from_url
+                    log_message("=== YOUTUBE EXTRACTION ===")
+                    log_message(f"Extracting data from: {url}")
+
+                    data = extract_from_url(url, on_log=log_message)
+
+                    if not data['transcript_blocks']:
+                        log_message("ERROR: No transcript could be extracted.")
+                        root.after(0, lambda: messagebox.showerror("Error", "No transcript found for this video."))
+                        return
+                    if not data['chapters']:
+                        log_message("ERROR: No chapters could be determined.")
+                        root.after(0, lambda: messagebox.showerror("Error", "No chapters found for this video."))
+                        return
+
+                    log_message("Extraction complete. Starting LLM pipeline...")
+
+                    result = run_pipeline_from_data(
+                        transcript_blocks=data['transcript_blocks'],
+                        chapters=data['chapters'],
+                        output_dir=output_dir,
+                        provider=provider,
+                        endpoint_url=endpoint_url,
+                        api_key=api_key,
+                        model_name=model_name,
+                        cancel_event=cancel_event,
+                        on_log=log_message,
+                        on_progress=on_progress,
+                    )
+                else:
+                    result = run_pipeline(
+                        transcript_path=transcript_path,
+                        timestamps_path=timestamps_path,
+                        output_dir=output_dir,
+                        provider=provider,
+                        endpoint_url=endpoint_url,
+                        api_key=api_key,
+                        model_name=model_name,
+                        cancel_event=cancel_event,
+                        on_log=log_message,
+                        on_progress=on_progress,
+                    )
+                
                 if result["success"]:
                     root.after(0, lambda: progress_bar.set(1.0))
                     root.after(0, lambda: messagebox.showinfo(
@@ -466,114 +614,49 @@ def main():
                     ))
                 elif result.get("error"):
                     root.after(0, lambda: messagebox.showerror("Pipeline Error", result["error"]))
-            except Exception as e:
-                log_message(f"CRITICAL ERROR in pipeline: {str(e)}")
-                root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
-            finally:
-                def restore_ui():
-                    cancel_btn.pack_forget()
-                    start_btn.pack(fill="x", side="bottom")
-                    progress_bar.set(0)
-                    if cancel_event.is_set():
-                        status_label.configure(text="Status: Cancelled", text_color="#ef4444")
-                    elif result and result.get("success"):
-                        status_label.configure(text="Status: Completed ✅", text_color="#10b981")
-                    else:
-                        status_label.configure(text="Status: Error", text_color="#ef4444")
-                root.after(0, restore_ui)
-
-        threading.Thread(target=process, daemon=True).start()
-
-    # ── YouTube URL Pipeline launcher ──
-    def start_youtube_pipeline_thread():
-        url = youtube_url_var.get().strip()
-        output_dir = output_dir_var.get().strip()
-        provider, endpoint_url, api_key, model_name = get_llm_config(ENV_PATH)
-
-        if not url:
-            messagebox.showerror("Validation Error", "Please paste a YouTube URL.")
-            return
-        if not output_dir or not os.path.isdir(output_dir):
-            messagebox.showerror("Validation Error", "Please select a valid output directory.")
-            return
-        if not endpoint_url:
-            messagebox.showerror("Validation Error", "No ENDPOINT_URL found in .env file. Please configure it.")
-            return
-        if not model_name:
-            messagebox.showerror("Validation Error", "No MODEL_NAME found in .env file. Please configure it.")
-            return
-
-        cancel_event.clear()
-        start_btn.pack_forget()
-        cancel_btn.configure(state="normal", text="Cancel Pipeline")
-        cancel_btn.pack(fill="x", side="bottom")
-        status_label.configure(text="Status: Running...", text_color="#fbbf24")
-
-        def on_progress(current, total):
-            progress_bar.set(current / total if total else 0)
-
-        def process():
-            result = None
-            try:
-                from src.youtube import extract_from_url
-                log_message("=== YOUTUBE EXTRACTION ===")
-                log_message(f"Extracting data from: {url}")
-
-                data = extract_from_url(url, on_log=log_message)
-
-                if not data['transcript_blocks']:
-                    log_message("ERROR: No transcript could be extracted.")
-                    root.after(0, lambda: messagebox.showerror("Error", "No transcript found for this video."))
-                    return
-                if not data['chapters']:
-                    log_message("ERROR: No chapters could be determined.")
-                    root.after(0, lambda: messagebox.showerror("Error", "No chapters found for this video."))
-                    return
-
-                log_message(f"Extraction complete. Starting LLM pipeline...")
-
-                result = run_pipeline_from_data(
-                    transcript_blocks=data['transcript_blocks'],
-                    chapters=data['chapters'],
-                    output_dir=output_dir,
-                    provider=provider,
-                    endpoint_url=endpoint_url,
-                    api_key=api_key,
-                    model_name=model_name,
-                    cancel_event=cancel_event,
-                    on_log=log_message,
-                    on_progress=on_progress,
-                )
-                if result["success"]:
-                    root.after(0, lambda: progress_bar.set(1.0))
-                    root.after(0, lambda: messagebox.showinfo(
-                        "Success",
-                        f"Processing completed successfully!\nNotes generated in:\n{output_dir}"
+            except ImportError as e:
+                if active == "YouTube URL" and ("youtube" in str(e) or "yt" in str(e)):
+                    log_message("ERROR: youtube-transcript-api or yt-dlp not installed.")
+                    log_message("Run: .venv\\Scripts\\pip install youtube-transcript-api yt-dlp")
+                    root.after(0, lambda: messagebox.showerror(
+                        "Missing Libraries",
+                        "youtube-transcript-api and yt-dlp are required.\n\n"
+                        "Run in terminal:\n.venv\\Scripts\\pip install youtube-transcript-api yt-dlp"
                     ))
-                elif result.get("error"):
-                    root.after(0, lambda: messagebox.showerror("Pipeline Error", result["error"]))
-            except ImportError:
-                log_message("ERROR: youtube-transcript-api or yt-dlp not installed.")
-                log_message("Run: .venv\\Scripts\\pip install youtube-transcript-api yt-dlp")
-                root.after(0, lambda: messagebox.showerror(
-                    "Missing Libraries",
-                    "youtube-transcript-api and yt-dlp are required.\n\n"
-                    "Run in terminal:\n.venv\\Scripts\\pip install youtube-transcript-api yt-dlp"
-                ))
+                else:
+                    log_message(f"CRITICAL ERROR: {str(e)}")
+                    root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
             except Exception as e:
                 log_message(f"CRITICAL ERROR: {str(e)}")
                 root.after(0, lambda: messagebox.showerror("Pipeline Error", str(e)))
             finally:
                 def restore_ui():
+                    progress_bar.stop()
+                    progress_bar.configure(mode="determinate")
                     cancel_btn.pack_forget()
                     start_btn.pack(fill="x", side="bottom")
-                    progress_bar.set(0)
                     if cancel_event.is_set():
                         status_label.configure(text="Status: Cancelled", text_color="#ef4444")
+                        status_pill.configure(fg_color="#ef4444")
+                        progress_bar.set(0)
+                        step_label.configure(text="")
                     elif result and result.get("success"):
+                        add_recent_output(output_dir)
+                        try:
+                            refresh_history()
+                        except NameError:
+                            pass
                         status_label.configure(text="Status: Completed ✅", text_color="#10b981")
+                        status_pill.configure(fg_color="#10b981")
+                        progress_bar.set(1.0)
+                        step_label.configure(text="Done.")
+                        pdf_theme_menu.pack(fill="x", pady=(5, 0))
+                        export_pdf_btn.pack(fill="x", pady=(5, 0))
                     else:
                         status_label.configure(text="Status: Error", text_color="#ef4444")
+                        status_pill.configure(fg_color="#ef4444")
+                        progress_bar.set(0)
+                        step_label.configure(text="Error occurred.")
                 root.after(0, restore_ui)
 
         threading.Thread(target=process, daemon=True).start()
@@ -586,16 +669,18 @@ def main():
 
     # ─────────────────────── UI LAYOUT ───────────────────────
 
+    CARD_RADIUS = 12
+    PAD = 20
+
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=0)    # Header
     root.grid_rowconfigure(1, weight=0)    # Top panel (Files & Actions)
     root.grid_rowconfigure(2, weight=0)    # Progress bar
     root.grid_rowconfigure(3, weight=1)    # Console area (expanding)
-    root.grid_rowconfigure(4, weight=0)    # Bottom PDF utility
 
     # ── Header ──
     header_frame = ctk.CTkFrame(root, fg_color="transparent")
-    header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(15, 5))
+    header_frame.grid(row=0, column=0, sticky="ew", padx=PAD, pady=(15, 5))
 
     ctk.CTkLabel(
         header_frame, text="YouTube Transcript to Revision Notes Pipeline",
@@ -610,18 +695,48 @@ def main():
 
     # ── Top Panel (Files + Actions) ──
     top_container = ctk.CTkFrame(root, fg_color="transparent")
-    top_container.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 5))
+    top_container.grid(row=1, column=0, sticky="nsew", padx=PAD, pady=(0, 5))
     top_container.grid_columnconfigure(0, weight=3)
     top_container.grid_columnconfigure(1, weight=1)
+    top_container.grid_rowconfigure(0, weight=1)
+    top_container.grid_rowconfigure(1, weight=1)
 
     # Input card with tabs
-    input_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
+    input_card = ctk.CTkFrame(top_container, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
     input_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+
+    def validate_inputs(*args):
+        active = input_tabs.get()
+        valid = False
+        out = output_dir_var.get().strip()
+        if active == "YouTube URL":
+            yt = youtube_url_var.get().strip()
+            if yt and out:
+                valid = True
+        else:
+            tr = transcript_path_var.get().strip()
+            ts = timestamps_path_var.get().strip()
+            if tr and ts and out:
+                valid = True
+        
+        try:
+            if valid:
+                start_btn.configure(state="normal")
+            else:
+                start_btn.configure(state="disabled")
+        except NameError:
+            pass
+
+    youtube_url_var.trace_add("write", validate_inputs)
+    output_dir_var.trace_add("write", validate_inputs)
+    transcript_path_var.trace_add("write", validate_inputs)
+    timestamps_path_var.trace_add("write", validate_inputs)
 
     input_tabs = ctk.CTkTabview(input_card, corner_radius=10, height=180,
                                  segmented_button_fg_color="#27272a",
                                  segmented_button_selected_color="#3b82f6",
-                                 segmented_button_selected_hover_color="#2563eb")
+                                 segmented_button_selected_hover_color="#2563eb",
+                                 command=validate_inputs)
     input_tabs.pack(fill="both", expand=True, padx=10, pady=(5, 10))
 
     # ── YouTube URL Tab (Default) ──
@@ -659,9 +774,37 @@ def main():
 
     input_tabs.set("YouTube URL")  # Default to YouTube tab
 
+    # ── History Card ──
+    history_card = ctk.CTkFrame(top_container, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
+    history_card.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(10, 0))
+
+    ctk.CTkLabel(history_card, text="Recent Generations", font=("Segoe UI", 12, "bold"), text_color="#a1a1aa").pack(anchor="w", padx=15, pady=(10, 5))
+    
+    history_inner = ctk.CTkScrollableFrame(history_card, fg_color="transparent", height=60)
+    history_inner.pack(fill="both", expand=True, padx=5, pady=5)
+    
+    def refresh_history():
+        for widget in history_inner.winfo_children():
+            widget.destroy()
+        
+        recents = load_recent_outputs()
+        if not recents:
+            ctk.CTkLabel(history_inner, text="No recent outputs.", font=("Segoe UI", 10, "italic"), text_color="#71717a").pack(anchor="w", padx=10, pady=5)
+        else:
+            for path in recents:
+                btn = ctk.CTkButton(
+                    history_inner, text=os.path.basename(path) or path, 
+                    anchor="w", fg_color="transparent", hover_color="#27272a", 
+                    text_color="#60a5fa", height=24,
+                    command=lambda p=path: _open_path(p)
+                )
+                btn.pack(fill="x", padx=5, pady=2)
+
+    refresh_history()
+
     # Actions card
-    actions_card = ctk.CTkFrame(top_container, corner_radius=12, border_width=1, border_color="#3f3f46")
-    actions_card.grid(row=0, column=1, sticky="nsew")
+    actions_card = ctk.CTkFrame(top_container, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
+    actions_card.grid(row=0, column=1, rowspan=2, sticky="nsew")
 
     ctk.CTkLabel(actions_card, text="Pipeline Controls", font=("Segoe UI", 14, "bold"), text_color="#10b981").pack(anchor="w", padx=15, pady=(12, 8))
 
@@ -669,11 +812,17 @@ def main():
     actions_inner.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
     # Status indicator
+    status_frame = ctk.CTkFrame(actions_inner, fg_color="transparent")
+    status_frame.pack(anchor="w", pady=(5, 5))
+    
+    status_pill = ctk.CTkFrame(status_frame, width=10, height=10, corner_radius=5, fg_color="#9ca3af")
+    status_pill.pack(side="left", padx=(0, 5))
+    
     status_label = ctk.CTkLabel(
-        actions_inner, text="Status: Ready",
+        status_frame, text="Status: Ready",
         font=("Segoe UI", 10), text_color="#a1a1aa"
     )
-    status_label.pack(anchor="w", pady=(5, 5))
+    status_label.pack(side="left")
 
     ctk.CTkButton(
         actions_inner, text="API Setup / Credentials",
@@ -688,18 +837,23 @@ def main():
     )
     open_output_btn.pack(fill="x", pady=(0, 5))
 
-    def get_active_start_command():
-        """Route to the correct pipeline based on active tab."""
-        active = input_tabs.get()
-        if active == "YouTube URL":
-            start_youtube_pipeline_thread()
-        else:
-            start_pipeline_thread()
+    pdf_theme_var = tk.StringVar(value="Textbook")
+    pdf_theme_menu = ctk.CTkOptionMenu(
+        actions_inner, variable=pdf_theme_var,
+        values=["Textbook", "Dark Academic", "Minimal Mono"],
+        font=("Segoe UI", 11)
+    )
+
+    export_pdf_btn = ctk.CTkButton(
+        actions_inner, text="Export to PDF",
+        font=("Segoe UI", 11, "bold"), fg_color="#3b82f6", hover_color="#2563eb", height=35,
+        command=lambda: convert_and_save_pdf(log_message, root, theme=pdf_theme_var.get())
+    )
 
     start_btn = ctk.CTkButton(
         actions_inner, text="Start Pipeline",
         font=("Segoe UI", 13, "bold"), fg_color="#10b981", hover_color="#059669",
-        text_color="#ffffff", height=45, command=get_active_start_command
+        text_color="#ffffff", height=45, command=start_unified_pipeline, state="disabled"
     )
     start_btn.pack(fill="x", side="bottom")
 
@@ -710,18 +864,40 @@ def main():
     )
 
     # ── Progress Bar ──
-    progress_bar = ctk.CTkProgressBar(root, height=6, corner_radius=3, progress_color="#10b981")
-    progress_bar.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 5))
+    progress_frame = ctk.CTkFrame(root, fg_color="transparent")
+    progress_frame.grid(row=2, column=0, sticky="ew", padx=PAD, pady=(0, 5))
+    progress_frame.grid_columnconfigure(0, weight=1)
+    
+    step_label = ctk.CTkLabel(progress_frame, text="", font=("Segoe UI", 10), text_color="#a1a1aa")
+    step_label.pack(anchor="w")
+    
+    progress_bar = ctk.CTkProgressBar(progress_frame, height=6, corner_radius=3, progress_color="#10b981")
+    progress_bar.pack(fill="x", pady=(2, 0))
     progress_bar.set(0)
 
     # ── Console ──
-    console_card = ctk.CTkFrame(root, corner_radius=12, border_width=1, border_color="#3f3f46")
-    console_card.grid(row=3, column=0, sticky="nsew", padx=20, pady=5)
+    console_card = ctk.CTkFrame(root, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
+    console_card.grid(row=3, column=0, sticky="nsew", padx=PAD, pady=5)
 
     console_header = ctk.CTkFrame(console_card, fg_color="transparent")
     console_header.pack(fill="x", padx=15, pady=(12, 8))
 
     ctk.CTkLabel(console_header, text="Console Output", font=("Segoe UI", 14, "bold"), text_color="#3b82f6").pack(side="left")
+
+    def toggle_console():
+        if console_text.winfo_ismapped():
+            console_text.pack_forget()
+            toggle_btn.configure(text="Show Details")
+        else:
+            console_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+            toggle_btn.configure(text="Hide Details")
+
+    toggle_btn = ctk.CTkButton(
+        console_header, text="Show Details", width=80, height=26,
+        font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
+        command=toggle_console
+    )
+    toggle_btn.pack(side="right", padx=(5, 0))
 
     def clear_console():
         console_text.configure(state="normal")
@@ -738,25 +914,7 @@ def main():
         console_card, fg_color="#09090b", text_color="#10b981",
         font=("Consolas", 11), border_width=0, corner_radius=8
     )
-    console_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
     console_text.configure(state="disabled")
-
-    # ── PDF Utility ──
-    pdf_card = ctk.CTkFrame(root, corner_radius=12, border_width=1, border_color="#3f3f46")
-    pdf_card.grid(row=4, column=0, sticky="ew", padx=20, pady=(5, 20), ipady=5)
-    pdf_card.grid_columnconfigure(0, weight=1)
-    pdf_card.grid_columnconfigure(1, weight=0)
-
-    pdf_info = ctk.CTkFrame(pdf_card, fg_color="transparent")
-    pdf_info.grid(row=0, column=0, sticky="w", padx=20, pady=10)
-    ctk.CTkLabel(pdf_info, text="Markdown-to-PDF Utility", font=("Segoe UI", 13, "bold"), text_color="#3b82f6").pack(anchor="w")
-    ctk.CTkLabel(pdf_info, text="Convert the generated Markdown study guides to premium styled PDF documents.", font=("Segoe UI", 10), text_color="#a1a1aa").pack(anchor="w", pady=(2, 0))
-
-    pdf_btns = ctk.CTkFrame(pdf_card, fg_color="transparent")
-    pdf_btns.grid(row=0, column=1, sticky="e", padx=20, pady=10)
-    ctk.CTkButton(pdf_btns, text="Install PDF Library", font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b", text_color="#f4f4f5", command=lambda: install_pdf_library(log_message, root)).pack(side="left", padx=5)
-    ctk.CTkButton(pdf_btns, text="Preview PDF", font=("Segoe UI", 11, "bold"), fg_color="#0d9488", hover_color="#0f766e", text_color="#ffffff", command=lambda: preview_pdf(log_message, root)).pack(side="left", padx=5)
-    ctk.CTkButton(pdf_btns, text="Convert & Save PDF", font=("Segoe UI", 11, "bold"), fg_color="#3b82f6", hover_color="#2563eb", text_color="#ffffff", command=lambda: convert_and_save_pdf(log_message, root)).pack(side="left", padx=5)
 
     # ── Startup ──
     load_config(transcript_path_var, timestamps_path_var, output_dir_var)
@@ -766,6 +924,8 @@ def main():
     log_message("System initialized.")
     log_message(f"LLM Config loaded from .env: {provider} / {model} @ {endpoint}")
     log_message("Select your files and click 'Start Pipeline' to begin.")
+    
+    validate_inputs()
 
     root.mainloop()
 
