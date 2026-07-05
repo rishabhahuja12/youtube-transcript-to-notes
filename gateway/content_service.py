@@ -3,6 +3,7 @@ FastAPI microservice for Content Management.
 Runs on Port 8003.
 """
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -29,6 +30,7 @@ app = FastAPI(
 
 ALLOWED_ORIGINS = [
     "http://localhost:8000",
+    "http://localhost:5173",
 ]
 
 app.add_middleware(
@@ -51,8 +53,8 @@ class LibraryAddRequest(BaseModel):
 
 class PdfExportRequest(BaseModel):
     """Request body for exporting markdown to PDF."""
-    md_path: str
-    pdf_path: str = ""
+    course_id: int
+    filename: str
     theme: str = "Textbook"
 
 
@@ -160,12 +162,14 @@ def _resolve_course_dir(course_id: int) -> str:
     """
     outputs = _load_recent_outputs()
     if course_id < 0 or course_id >= len(outputs):
+        logging.error(f"Invalid course_id requested: {course_id}")
         raise HTTPException(
             status_code=404,
             detail=f"Invalid course_id: {course_id}",
         )
     course_dir = outputs[course_id]
     if not os.path.isdir(course_dir):
+        logging.error(f"Course directory does not exist: {course_dir}")
         raise HTTPException(
             status_code=404,
             detail="Course directory does not exist.",
@@ -246,10 +250,12 @@ def _mask_key(key: str) -> str:
         key: The raw API key.
 
     Returns:
-        Masked string showing only the first 8 characters.
+        Masked string. If length <= 8, returns all asterisks. Otherwise first 8 chars + '...'.
     """
     if not key:
         return ""
+    if len(key) <= 8:
+        return "*" * len(key)
     return key[:8] + "..."
 
 
@@ -311,7 +317,11 @@ def _get_shared_pdf_css(theme: str = "Textbook") -> str:
 
 @app.get("/content/library", response_model=List[CourseInfo])
 async def get_library() -> List[CourseInfo]:
-    """Return the list of courses in the library."""
+    """Return the list of courses in the library.
+    
+    Returns:
+        List[CourseInfo]: List of course objects with metadata.
+    """
     outputs = _load_recent_outputs()
     courses: List[CourseInfo] = []
     for path in outputs:
@@ -330,7 +340,14 @@ async def get_library() -> List[CourseInfo]:
 
 @app.post("/content/library/add")
 async def add_library_entry(req: LibraryAddRequest) -> Dict[str, bool]:
-    """Add a directory path to the library's recent outputs."""
+    """Add a directory path to the library's recent outputs.
+    
+    Args:
+        req: Request containing the path.
+        
+    Returns:
+        Dict[str, bool]: Success status.
+    """
     _add_recent_output(req.path)
     return {"success": True}
 
@@ -341,7 +358,14 @@ async def add_library_entry(req: LibraryAddRequest) -> Dict[str, bool]:
 
 @app.get("/content/course/{id}/files", response_model=List[FileInfo])
 async def get_course_files(id: int) -> List[FileInfo]:
-    """List files in a course output directory."""
+    """List files in a course output directory.
+    
+    Args:
+        id: Integer index of the course in recent outputs.
+        
+    Returns:
+        List[FileInfo]: List of files in the course directory.
+    """
     course_dir = _resolve_course_dir(id)
     files: List[FileInfo] = []
     try:
@@ -351,34 +375,54 @@ async def get_course_files(id: int) -> List[FileInfo]:
             size = os.path.getsize(full) if os.path.isfile(full) else 0
             files.append(FileInfo(name=name, type=ftype, size=size))
     except OSError as exc:
+        logging.error(f"Error reading directory {course_dir}: {exc}")
         raise HTTPException(status_code=500, detail=f"Error reading directory: {exc}") from exc
     return files
 
 
 @app.get("/content/course/{id}/notes/{file}")
 async def get_course_notes(id: int, file: str) -> Dict[str, str]:
-    """Read and return a markdown file from the course directory."""
+    """Read and return a markdown file from the course directory.
+    
+    Args:
+        id: Integer index of the course.
+        file: The requested filename.
+        
+    Returns:
+        Dict[str, str]: The content of the markdown file.
+    """
     course_dir = _resolve_course_dir(id)
     safe_name = os.path.basename(file)
     if safe_name != file or ".." in file:
+        logging.error(f"Invalid filename requested: {file}")
         raise HTTPException(status_code=403, detail="Invalid filename.")
     if not safe_name.endswith(".md"):
+        logging.error(f"Non-markdown file requested: {safe_name}")
         raise HTTPException(status_code=400, detail="Only .md files can be read.")
 
     filepath = os.path.join(course_dir, safe_name)
     if not os.path.isfile(filepath):
+        logging.error(f"Notes file not found: {filepath}")
         raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
     except OSError as exc:
+        logging.error(f"Error reading file {filepath}: {exc}")
         raise HTTPException(status_code=500, detail=f"Error reading file: {exc}") from exc
     return {"content": content}
 
 
 @app.get("/content/course/{id}/graph")
 async def get_course_graph(id: int) -> Dict[str, str]:
-    """Read and return knowledge graph HTML from course dir."""
+    """Read and return knowledge graph HTML from course dir.
+    
+    Args:
+        id: Integer index of the course.
+        
+    Returns:
+        Dict[str, str]: The HTML content of the knowledge graph.
+    """
     course_dir = _resolve_course_dir(id)
     graph_file = None
     try:
@@ -386,7 +430,8 @@ async def get_course_graph(id: int) -> Dict[str, str]:
             if "_knowledge_graph" in name.lower() and name.endswith(".html"):
                 graph_file = os.path.join(course_dir, name)
                 break
-    except OSError:
+    except OSError as exc:
+        logging.error(f"Error reading directory {course_dir} for graph: {exc}")
         pass
 
     if not graph_file or not os.path.isfile(graph_file):
@@ -396,12 +441,20 @@ async def get_course_graph(id: int) -> Dict[str, str]:
         with open(graph_file, "r", encoding="utf-8") as f:
             return {"html": f.read()}
     except OSError as exc:
+        logging.error(f"Error reading graph file {graph_file}: {exc}")
         raise HTTPException(status_code=500, detail=f"Error reading graph: {exc}") from exc
 
 
 @app.get("/content/course/{id}/keyframes", response_model=List[KeyframeInfo])
 async def get_course_keyframes(id: int) -> List[KeyframeInfo]:
-    """List keyframe images in the course directory."""
+    """List keyframe images in the course directory.
+    
+    Args:
+        id: Integer index of the course.
+        
+    Returns:
+        List[KeyframeInfo]: List of keyframe images.
+    """
     course_dir = _resolve_course_dir(id)
     keyframes: List[KeyframeInfo] = []
     image_exts = (".jpg", ".jpeg", ".png")
@@ -410,21 +463,32 @@ async def get_course_keyframes(id: int) -> List[KeyframeInfo]:
             if name.lower().endswith(image_exts):
                 url = f"/static/{id}/{name}"
                 keyframes.append(KeyframeInfo(name=name, url=url))
-    except OSError:
+    except OSError as exc:
+        logging.error(f"Error reading directory {course_dir} for keyframes: {exc}")
         pass
     return keyframes
 
 
 @app.get("/static/{id}/{filename}")
 async def serve_static_file(id: int, filename: str) -> FileResponse:
-    """Serve a static file from a validated course directory."""
+    """Serve a static file from a validated course directory.
+    
+    Args:
+        id: Integer index of the course.
+        filename: Name of the file to serve.
+        
+    Returns:
+        FileResponse: The requested static file.
+    """
     course_dir = _resolve_course_dir(id)
     safe_name = os.path.basename(filename)
     if safe_name != filename or ".." in filename:
+        logging.error(f"Invalid static filename requested: {filename}")
         raise HTTPException(status_code=403, detail="Invalid filename.")
 
     filepath = os.path.join(course_dir, safe_name)
     if not os.path.isfile(filepath):
+        logging.error(f"Static file not found: {filepath}")
         raise HTTPException(status_code=404, detail="File not found.")
 
     return FileResponse(filepath)
@@ -436,7 +500,11 @@ async def serve_static_file(id: int, filename: str) -> FileResponse:
 
 @app.get("/settings/pool")
 async def get_settings_pool() -> List[Dict[str, str]]:
-    """Return the provider pool config with masked API keys."""
+    """Return the provider pool config with masked API keys.
+    
+    Returns:
+        List[Dict[str, str]]: Pool configurations.
+    """
     try:
         if SCRIPT_DIR not in sys.path:
             sys.path.append(SCRIPT_DIR)
@@ -453,12 +521,20 @@ async def get_settings_pool() -> List[Dict[str, str]]:
             })
         return result
     except Exception as exc:
+        logging.error(f"Error loading pool: {exc}")
         raise HTTPException(status_code=500, detail=f"Error loading pool: {exc}") from exc
 
 
 @app.post("/settings/pool")
 async def store_settings_pool(req: PoolStoreRequest) -> Dict[str, bool]:
-    """Store a new provider pool configuration."""
+    """Store a new provider pool configuration.
+    
+    Args:
+        req: Request containing the pool data.
+        
+    Returns:
+        Dict[str, bool]: Success status.
+    """
     try:
         if SCRIPT_DIR not in sys.path:
             sys.path.append(SCRIPT_DIR)
@@ -467,12 +543,17 @@ async def store_settings_pool(req: PoolStoreRequest) -> Dict[str, bool]:
         success = store_provider_pool(pool_json)
         return {"success": success}
     except Exception as exc:
+        logging.error(f"Error storing pool: {exc}")
         raise HTTPException(status_code=500, detail=f"Error storing pool: {exc}") from exc
 
 
 @app.get("/settings/health", response_model=HealthStatus)
 async def get_settings_health() -> HealthStatus:
-    """Check system health: Ollama, Playwright, Keyring."""
+    """Check system health: Ollama, Playwright, Keyring.
+    
+    Returns:
+        HealthStatus: Status of various system components.
+    """
     return HealthStatus(
         ollama=_check_ollama(),
         playwright=_check_playwright(),
@@ -486,13 +567,29 @@ async def get_settings_health() -> HealthStatus:
 
 @app.post("/pdf/export")
 async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
-    """Convert a markdown file to PDF using Playwright."""
-    if not os.path.isfile(req.md_path):
+    """Convert a markdown file to PDF using Playwright.
+    
+    Args:
+        req: Request containing the course_id, filename, and theme.
+        
+    Returns:
+        Dict[str, str]: Path to the generated PDF.
+    """
+    course_dir = _resolve_course_dir(req.course_id)
+    safe_name = os.path.basename(req.filename)
+    if safe_name != req.filename or ".." in req.filename:
+        logging.error(f"Invalid PDF export filename requested: {req.filename}")
+        raise HTTPException(status_code=403, detail="Invalid filename.")
+    if not safe_name.endswith(".md"):
+        logging.error(f"Non-markdown file requested for PDF export: {safe_name}")
+        raise HTTPException(status_code=400, detail="Only .md files can be exported.")
+
+    md_path = os.path.join(course_dir, safe_name)
+    if not os.path.isfile(md_path):
+        logging.error(f"Markdown file not found for PDF export: {md_path}")
         raise HTTPException(status_code=400, detail="Markdown file not found.")
 
-    pdf_path = req.pdf_path
-    if not pdf_path:
-        pdf_path = req.md_path.rsplit(".", 1)[0] + ".pdf"
+    pdf_path = md_path.rsplit(".", 1)[0] + ".pdf"
 
     try:
         import asyncio
@@ -505,7 +602,7 @@ async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
         import markdown
         from playwright.sync_api import sync_playwright
 
-        with open(req.md_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(md_path, "r", encoding="utf-8", errors="replace") as f:
             md_content = f.read()
 
         html_body = markdown.markdown(md_content, extensions=["fenced_code", "tables"])
@@ -542,14 +639,18 @@ async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
             f.write(html_content)
             temp_html = f.name
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(f"file://{temp_html}", wait_until="networkidle")
-            page.pdf(path=pdf_path, format="A4", print_background=True, prefer_css_page_size=True)
-            browser.close()
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(f"file://{temp_html}", wait_until="networkidle")
+                page.pdf(path=pdf_path, format="A4", print_background=True, prefer_css_page_size=True)
+                browser.close()
+        finally:
+            if os.path.exists(temp_html):
+                os.remove(temp_html)
 
-        os.remove(temp_html)
         return {"path": pdf_path}
     except Exception as exc:
+        logging.error(f"PDF export failed for {md_path}: {exc}")
         raise HTTPException(status_code=500, detail=f"PDF export failed: {exc}") from exc

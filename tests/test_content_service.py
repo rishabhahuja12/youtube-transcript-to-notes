@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 from typing import Generator
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -40,10 +40,6 @@ def tmp_course_dir(tmp_path: str) -> str:
         "<html><body>Graph</body></html>",
         encoding="utf-8",
     )
-
-    # -- Create sample PDF
-    pdf = d / "notes.pdf"
-    pdf.write_bytes(b"%PDF-dummy")
 
     return str(d)
 
@@ -96,6 +92,7 @@ def _client() -> AsyncClient:
 async def test_library_returns_list(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """GET /content/library should return a list of courses."""
     async with _client() as client:
         resp = await client.get("/content/library")
     assert resp.status_code == 200
@@ -108,6 +105,7 @@ async def test_library_returns_list(
 
 @pytest.mark.asyncio
 async def test_library_empty(mock_empty_config: str) -> None:
+    """GET /content/library with no courses returns empty list."""
     async with _client() as client:
         resp = await client.get("/content/library")
     assert resp.status_code == 200
@@ -118,6 +116,7 @@ async def test_library_empty(mock_empty_config: str) -> None:
 async def test_library_add(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """POST /content/library/add should return success."""
     async with _client() as client:
         resp = await client.post(
             "/content/library/add",
@@ -131,6 +130,7 @@ async def test_library_add(
 async def test_course_files(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """GET /content/course/0/files should list files."""
     async with _client() as client:
         resp = await client.get("/content/course/0/files")
     assert resp.status_code == 200
@@ -142,6 +142,7 @@ async def test_course_files(
 async def test_course_notes(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """GET /content/course/0/notes/file.md returns content."""
     async with _client() as client:
         resp = await client.get("/content/course/0/notes/Test_Detailed_Notes.md")
     assert resp.status_code == 200
@@ -153,6 +154,7 @@ async def test_course_notes(
 async def test_course_graph(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """GET /content/course/0/graph returns HTML content."""
     async with _client() as client:
         resp = await client.get("/content/course/0/graph")
     assert resp.status_code == 200
@@ -164,6 +166,7 @@ async def test_course_graph(
 async def test_course_keyframes(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """GET /content/course/0/keyframes returns image list."""
     async with _client() as client:
         resp = await client.get("/content/course/0/keyframes")
     assert resp.status_code == 200
@@ -175,13 +178,35 @@ async def test_course_keyframes(
 async def test_static_file_serving(
     mock_config: str, tmp_course_dir: str
 ) -> None:
+    """GET /static/0/keyframe_001.jpg serves the file."""
     async with _client() as client:
         resp = await client.get("/static/0/keyframe_001.jpg")
     assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
+async def test_notes_path_traversal(
+    mock_config: str, tmp_course_dir: str
+) -> None:
+    """GET /content/course/0/notes/../etc returns 403 or 404."""
+    async with _client() as client:
+        resp = await client.get("/content/course/0/notes/..%2F..%2Fetc%2Fpasswd")
+    assert resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
+async def test_static_path_traversal(
+    mock_config: str, tmp_course_dir: str
+) -> None:
+    """GET /static/0/../etc returns 403 or 404."""
+    async with _client() as client:
+        resp = await client.get("/static/0/..%2F..%2Fetc%2Fpasswd")
+    assert resp.status_code in (403, 404)
+
+
+@pytest.mark.asyncio
 async def test_settings_health_shape() -> None:
+    """GET /settings/health returns correct shape."""
     async with _client() as client:
         resp = await client.get("/settings/health")
     assert resp.status_code == 200
@@ -189,6 +214,7 @@ async def test_settings_health_shape() -> None:
 
 @pytest.mark.asyncio
 async def test_settings_pool_get() -> None:
+    """GET /settings/pool returns a list of configs."""
     with patch(
         "src.credentials.get_provider_pool_or_legacy"
     ) as mock_pool:
@@ -217,7 +243,33 @@ async def test_settings_pool_get() -> None:
 
 
 @pytest.mark.asyncio
+async def test_settings_pool_post() -> None:
+    """POST /settings/pool should return success."""
+    with patch("src.credentials.store_provider_pool") as mock_store:
+        mock_store.return_value = True
+        async with _client() as client:
+            resp = await client.post(
+                "/settings/pool",
+                json={
+                    "pool": [
+                        {
+                            "provider": "Groq",
+                            "endpoint_url": "https://api.groq.com",
+                            "api_key": "sk-test",
+                            "model_name": "llama3",
+                            "capability": "text"
+                        }
+                    ]
+                }
+            )
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    mock_store.assert_called_once()
+
+
+@pytest.mark.asyncio
 async def test_cors_allowed_origin() -> None:
+    """CORS should allow localhost:8000 origin."""
     async with _client() as client:
         resp = await client.options(
             "/content/library",
@@ -230,25 +282,58 @@ async def test_cors_allowed_origin() -> None:
 
 
 def test_mask_key_full() -> None:
+    """_mask_key masks keys > 8 chars to first 8 chars + '...'."""
     assert _mask_key("sk-abcdefgh12345678") == "sk-abcde..."
 
 
 def test_mask_key_short() -> None:
-    assert _mask_key("abc") == "abc..."
+    """_mask_key masks keys <= 8 chars completely."""
+    assert _mask_key("sk-abc") == "******"
 
 
 def test_mask_key_empty() -> None:
+    """_mask_key with empty string returns empty."""
     assert _mask_key("") == ""
 
 
 @pytest.mark.asyncio
-async def test_pdf_export_missing_file() -> None:
+async def test_pdf_export_missing_file(mock_config: str, tmp_course_dir: str) -> None:
+    """PDF export with nonexistent md_path returns 400."""
     async with _client() as client:
         resp = await client.post(
             "/pdf/export",
             json={
-                "md_path": "/nonexistent/file.md",
+                "course_id": 0,
+                "filename": "does_not_exist.md",
                 "theme": "Textbook",
             },
         )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_pdf_export_success(mock_config: str, tmp_course_dir: str) -> None:
+    """PDF export successfully generates a PDF file."""
+    with patch("playwright.sync_api.sync_playwright") as mock_playwright:
+        mock_p = MagicMock()
+        mock_browser = MagicMock()
+        mock_page = MagicMock()
+        mock_playwright.return_value.__enter__.return_value = mock_p
+        mock_p.chromium.launch.return_value = mock_browser
+        mock_browser.new_page.return_value = mock_page
+
+        async with _client() as client:
+            resp = await client.post(
+                "/pdf/export",
+                json={
+                    "course_id": 0,
+                    "filename": "Test_Detailed_Notes.md",
+                    "theme": "Textbook",
+                },
+            )
+        assert resp.status_code == 200
+        assert "path" in resp.json()
+        assert resp.json()["path"].endswith(".pdf")
+        
+        # Verify page.pdf was called
+        mock_page.pdf.assert_called_once()
