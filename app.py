@@ -931,7 +931,7 @@ def main():
     timestamps_path_var.trace_add("write", validate_inputs)
     topic_title_var.trace_add("write", validate_inputs)
 
-    input_tabs = ctk.CTkTabview(input_card, corner_radius=10, height=180,
+    input_tabs = ctk.CTkTabview(input_card, corner_radius=10, height=300,
                                  segmented_button_fg_color="#27272a",
                                  segmented_button_selected_color="#3b82f6",
                                  segmented_button_selected_hover_color="#2563eb",
@@ -1028,6 +1028,127 @@ def main():
         text_color="#a1a1aa", height=20,
         command=lambda: install_pdf_library(log_message, root)
     ).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(10, 0))
+
+    # ── Local Chat Tab ──
+    chat_tab = input_tabs.add("Local Chat")
+    chat_tab.grid_columnconfigure(0, weight=1)
+    chat_tab.grid_rowconfigure(2, weight=1)
+    
+    ctk.CTkLabel(
+        chat_tab, text="Chat with your generated notes using Local Ollama.",
+        font=("Segoe UI", 10), text_color="#a1a1aa"
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 8))
+    
+    chat_file_var = tk.StringVar(value="")
+    chat_file_dropdown = ctk.CTkOptionMenu(
+        chat_tab, variable=chat_file_var, values=["Select a .md file..."], font=("Segoe UI", 11)
+    )
+    chat_file_dropdown.grid(row=1, column=0, columnspan=2, sticky="we", padx=5, pady=4)
+    
+    def update_chat_dropdown(*args):
+        out_dir = output_dir_var.get().strip()
+        if out_dir and os.path.isdir(out_dir):
+            try:
+                md_files = [f for f in os.listdir(out_dir) if f.endswith(".md")]
+                if md_files:
+                    chat_file_dropdown.configure(values=md_files)
+                    if chat_file_var.get() not in md_files:
+                        chat_file_var.set(md_files[0])
+                else:
+                    chat_file_dropdown.configure(values=["No .md files found"])
+                    chat_file_var.set("No .md files found")
+            except Exception:
+                pass
+    
+    output_dir_var.trace_add("write", update_chat_dropdown)
+    
+    chat_log = ctk.CTkTextbox(
+        chat_tab, height=80, state="disabled", wrap="word", font=("Segoe UI", 11)
+    )
+    chat_log.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=4)
+    
+    chat_input = ctk.CTkEntry(
+        chat_tab, font=("Segoe UI", 11), placeholder_text="Ask a question..."
+    )
+    chat_input.grid(row=3, column=0, sticky="we", padx=(5, 5), pady=4)
+    
+    chat_history = []
+    
+    def on_chat_file_change(*args):
+        chat_history.clear()
+        chat_log.configure(state="normal")
+        chat_log.delete("1.0", "end")
+        chat_log.configure(state="disabled")
+
+    chat_file_var.trace_add("write", on_chat_file_change)
+    
+    def send_chat_message(*args):
+        user_msg = chat_input.get().strip()
+        if not user_msg: return
+        
+        md_file = chat_file_var.get()
+        out_dir = output_dir_var.get().strip()
+        if not md_file or md_file == "Select a .md file..." or md_file == "No .md files found":
+            messagebox.showerror("Error", "Please select a valid markdown file.", parent=root)
+            return
+            
+        file_path = os.path.join(out_dir, md_file)
+        if not os.path.exists(file_path):
+            messagebox.showerror("Error", "Selected file not found.", parent=root)
+            return
+            
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                md_content = f.read()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read file: {str(e)}", parent=root)
+            return
+            
+        chat_input.delete(0, 'end')
+        chat_log.configure(state="normal")
+        chat_log.insert('end', f"You: {user_msg}\n")
+        chat_log.see('end')
+        chat_log.configure(state="disabled")
+        
+        # Disable UI during inference
+        chat_btn.configure(state="disabled")
+        chat_input.configure(state="disabled")
+        
+        def run_chat():
+            from src.chat import LocalChatClient
+            client = LocalChatClient()
+            try:
+                response = client.chat(md_content, user_msg, chat_history)
+                chat_history.append({"role": "user", "content": user_msg})
+                chat_history.append({"role": "assistant", "content": response})
+                
+                def update_ui():
+                    chat_log.configure(state="normal")
+                    chat_log.insert('end', f"AI: {response}\n\n")
+                    chat_log.see('end')
+                    chat_log.configure(state="disabled")
+                    chat_btn.configure(state="normal")
+                    chat_input.configure(state="normal")
+                
+                root.after(0, update_ui)
+            except Exception as e:
+                def show_err():
+                    chat_log.configure(state="normal")
+                    chat_log.insert('end', f"Error: {str(e)}\n\n")
+                    chat_log.see('end')
+                    chat_log.configure(state="disabled")
+                    chat_btn.configure(state="normal")
+                    chat_input.configure(state="normal")
+                root.after(0, show_err)
+                
+        threading.Thread(target=run_chat, daemon=True).start()
+    
+    chat_btn = ctk.CTkButton(
+        chat_tab, text="Send", width=60,
+        font=("Segoe UI", 11, "bold"), command=send_chat_message
+    )
+    chat_btn.grid(row=3, column=1, sticky="e", padx=(0, 5), pady=4)
+    chat_input.bind("<Return>", send_chat_message)
 
     input_tabs.set("YouTube URL")  # Default to YouTube tab
 
