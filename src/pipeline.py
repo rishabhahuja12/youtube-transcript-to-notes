@@ -465,31 +465,79 @@ def _run_llm_pipeline(
             f"a high-impact reference guide. Output only the Markdown content."
         )
 
-        try:
+        max_retries = 3
+        retry_delay = 20
+        practical_summary = None
+        pipeline_cancelled = False
+        system_prompt_summary = (
+            "You are an expert technical note-writer and "
+            "instructional designer. Your task is to write a "
+            "practical executive summary and cheat-sheet for a "
+            "course based on its chapters and overall content."
+        )
+        est_tokens_summary = estimate_tokens(user_prompt_summary + system_prompt_summary)
+
+        for attempt in range(max_retries):
             if cancel_event.is_set():
-                practical_summary = (
-                    f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
-                    "[Skipped due to pipeline cancellation]\n"
-                )
-            else:
+                on_log("Pipeline cancelled by user.")
+                pipeline_cancelled = True
+                break
+            
+            # Wait for rate limiter inside the retry loop
+            if not limiter.wait_if_needed(est_tokens_summary, cancel_event, on_log):
+                on_log("Pipeline cancelled by user.")
+                pipeline_cancelled = True
+                break
+
+            try:
                 practical_summary = call_llm(
                     provider=provider,
                     endpoint_url=endpoint_url,
                     api_key=api_key,
                     model_name=model_name,
-                    system_prompt=(
-                        "You are an expert technical note-writer and "
-                        "instructional designer. Your task is to write a "
-                        "practical executive summary and cheat-sheet for a "
-                        "course based on its chapters and overall content."
-                    ),
+                    system_prompt=system_prompt_summary,
                     user_prompt=user_prompt_summary,
                 )
-        except Exception as e:
-            on_log(f"ERROR generating practical summary: {e}")
+                # Update rate limiter with actual output tokens
+                if practical_summary:
+                    actual_tokens = est_tokens_summary + estimate_tokens(practical_summary)
+                    limiter.record_actual_tokens(actual_tokens)
+                break  # Success!
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    err_str = str(e)
+                    # Try to parse exact retry delay from Gemini's error
+                    match = re.search(r"Please retry in ([\d\.]+)s", err_str)
+                    if match:
+                        try:
+                            retry_delay = float(match.group(1)) + 2.0  # +2s buffer
+                        except ValueError:
+                            pass
+                            
+                    on_log(
+                        f"API Error during summary generation (Attempt {attempt + 1}/{max_retries}): {e}"
+                    )
+                    on_log(
+                        f"Cooling down for {retry_delay:.1f} seconds..."
+                    )
+                    # Interruptible cooldown
+                    if cancel_event.wait(retry_delay):
+                        pipeline_cancelled = True
+                        break
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    on_log(
+                        f"ERROR: Failed to generate practical summary after {max_retries} attempts: {e}"
+                    )
+                    practical_summary = (
+                        f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
+                        f"[Failed to generate cheat-sheet using LLM: {e}]\n"
+                    )
+
+        if pipeline_cancelled and not practical_summary:
             practical_summary = (
                 f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
-                f"[Failed to generate cheat-sheet using LLM: {e}]\n"
+                "[Skipped due to pipeline cancellation]\n"
             )
 
         practical_path = os.path.join(output_dir, f"{slug}_Practical_Notes.md")
