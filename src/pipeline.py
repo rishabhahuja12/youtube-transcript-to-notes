@@ -71,6 +71,10 @@ def run_pipeline(
     practical_path = ""
 
     try:
+        active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
+        if active_pool.total == 0:
+            raise ValueError("No API keys configured for the requested capability.")
+
         on_log("=== PIPELINE STARTED ===")
 
         # ------------------------------------------------------------------
@@ -137,7 +141,7 @@ def run_pipeline(
                 chapter_frames = None
 
         return _run_llm_pipeline(
-            chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
+            chapters, chapter_texts, output_dir, pool, active_pool, cancel_event, on_log, on_progress,
             video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
         )
 
@@ -169,6 +173,10 @@ def run_pipeline_from_data(
         List of dicts ``{"time": "H:MM:SS", "title": str, "section": str}``.
     """
     try:
+        active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
+        if active_pool.total == 0:
+            raise ValueError("No API keys configured for the requested capability.")
+
         on_log("=== PIPELINE STARTED ===")
 
         for c in chapters:
@@ -204,7 +212,7 @@ def run_pipeline_from_data(
                 chapter_frames = None
 
         return _run_llm_pipeline(
-            chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
+            chapters, chapter_texts, output_dir, pool, active_pool, cancel_event, on_log, on_progress,
             video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
         )
 
@@ -217,7 +225,8 @@ def _run_llm_pipeline(
     chapters: list,
     chapter_texts: list,
     output_dir: str,
-    pool: ProviderPool,
+    original_pool: ProviderPool,
+    active_pool: ProviderPool,
     cancel_event: threading.Event,
     on_log: callable,
     on_progress: callable,
@@ -236,12 +245,12 @@ def _run_llm_pipeline(
         total_words = sum(
             len(" ".join(chapter_texts[i]).split()) for i in range(len(chapters))
         )
-        estimate = estimate_pipeline_time(total_words, len(chapters), pool.current.provider)
-        on_log(f"Rate limits: {get_rate_limit_info(pool.current.provider)}")
+        estimate = estimate_pipeline_time(total_words, len(chapters), active_pool.current.provider)
+        on_log(f"Rate limits: {get_rate_limit_info(active_pool.current.provider)}")
         on_log(estimate["info"])
 
         # --- Create rate limiter ---
-        limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+        limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
 
         # --- Load checkpoint if exists ---
         dump_str = json.dumps(chapters, sort_keys=True).encode("utf-8")
@@ -343,10 +352,10 @@ def _run_llm_pipeline(
 
                 try:
                     response = call_llm(
-                        provider=pool.current.provider,
-                        endpoint_url=pool.current.endpoint_url,
-                        api_key=pool.current.api_key,
-                        model_name=pool.current.model_name,
+                        provider=active_pool.current.provider,
+                        endpoint_url=active_pool.current.endpoint_url,
+                        api_key=active_pool.current.api_key,
+                        model_name=active_pool.current.model_name,
                         system_prompt=(
                             "You are an expert technical note-writer and instructional "
                             "designer. Your task is to write highly detailed, clear, and "
@@ -365,12 +374,12 @@ def _run_llm_pipeline(
                     if attempt < max_retries - 1:
                         # Try to rotate key first on error
                         if "429" in str(e) or "rate" in str(e).lower():
-                            if pool.rotate():
+                            if active_pool.rotate():
                                 on_log(
-                                    f"Rate limit hit. Switching to {pool.current_label()} "
+                                    f"Rate limit hit. Switching to {active_pool.current_label()} "
                                     f"immediately..."
                                 )
-                                limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+                                limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                                 continue # retry immediately without sleep
 
                         err_str = str(e)
@@ -389,8 +398,8 @@ def _run_llm_pipeline(
                         if cancel_event.wait(retry_delay):
                             pipeline_cancelled = True
                             break
-                        pool.reset_cycle()
-                        limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+                        active_pool.reset_cycle()
+                        limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                         retry_delay *= 2  # Exponential backoff (for the next attempt, if any)
                     else:
                         on_log(
@@ -569,10 +578,10 @@ def _run_llm_pipeline(
 
             try:
                 practical_summary = call_llm(
-                    provider=pool.current.provider,
-                    endpoint_url=pool.current.endpoint_url,
-                    api_key=pool.current.api_key,
-                    model_name=pool.current.model_name,
+                    provider=active_pool.current.provider,
+                    endpoint_url=active_pool.current.endpoint_url,
+                    api_key=active_pool.current.api_key,
+                    model_name=active_pool.current.model_name,
                     system_prompt=system_prompt_summary,
                     user_prompt=user_prompt_summary,
                 )
@@ -585,12 +594,12 @@ def _run_llm_pipeline(
                 if attempt < max_retries - 1:
                     # Try to rotate key first on error
                     if "429" in str(e) or "rate" in str(e).lower():
-                        if pool.rotate():
+                        if active_pool.rotate():
                             on_log(
-                                f"Rate limit hit. Switching to {pool.current_label()} "
+                                f"Rate limit hit. Switching to {active_pool.current_label()} "
                                 f"immediately..."
                             )
-                            limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+                            limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                             continue # retry immediately without sleep
 
                     err_str = str(e)
@@ -609,8 +618,8 @@ def _run_llm_pipeline(
                     if cancel_event.wait(retry_delay):
                         pipeline_cancelled = True
                         break
-                    pool.reset_cycle()
-                    limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+                    active_pool.reset_cycle()
+                    limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                     retry_delay *= 2  # Exponential backoff
                 else:
                     on_log(
@@ -640,8 +649,12 @@ def _run_llm_pipeline(
             try:
                 from src.knowledge_graph import extract_concepts, build_graph, render_html
                 on_log("Extracting concepts for Knowledge Graph...")
+                text_pool = original_pool.get_text_pool()
+                if text_pool.total == 0:
+                    raise ValueError("No text API keys configured for KAG.")
+                    
                 graph_data = extract_concepts(
-                    full_detailed_content, pool.current, on_log
+                    full_detailed_content, text_pool.current, on_log
                 )
                 kag_json_path = os.path.join(output_dir, f"{slug}_knowledge_graph.json")
                 kag_html_path = os.path.join(output_dir, f"{slug}_knowledge_graph.html")

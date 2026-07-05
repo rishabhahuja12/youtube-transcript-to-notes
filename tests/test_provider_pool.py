@@ -81,3 +81,27 @@ def test_provider_pool_security():
     # Masking is handled by the UI, but current_label just shows config index and provider
     assert "super_secret_key" not in label
     assert "Groq" in label
+
+def test_provider_pool_capability_filtering():
+    c1 = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="k1", model_name="m1", capability="text")
+    c2 = ProviderConfig(provider="Gemini", endpoint_url="http://b", api_key="k2", model_name="m2", capability="vision")
+    c3 = ProviderConfig(provider="OpenRouter", endpoint_url="http://c", api_key="k3", model_name="m3", capability="text")
+    
+    pool = ProviderPool([c1, c2, c3])
+    
+    text_pool = pool.get_text_pool()
+    assert text_pool.total == 2
+    assert text_pool.configs[0].provider == "Groq"
+    assert text_pool.configs[1].provider == "OpenRouter"
+    
+    vision_pool = pool.get_vision_pool()
+    assert vision_pool.total == 1
+    assert vision_pool.configs[0].provider == "Gemini"
+
+def test_provider_pool_json_capability_default():
+    # Simulate old JSON without capability
+    old_json = '[{"provider": "Groq", "endpoint_url": "http://a", "api_key": "k1", "model_name": "m1"}]'
+    pool = ProviderPool.from_json(old_json)
+    
+    assert pool.total == 1
+    assert pool.configs[0].capability == "text"

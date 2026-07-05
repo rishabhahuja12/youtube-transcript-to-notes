@@ -140,7 +140,7 @@ def _show_env_help_popup(root):
 
     help_win = ctk.CTkToplevel(root)
     help_win.title("API Configuration Setup")
-    help_win.geometry("600x650")
+    help_win.geometry("650x750")
     help_win.resizable(False, False)
     help_win.transient(root)
     help_win.grab_set()
@@ -154,16 +154,28 @@ def _show_env_help_popup(root):
     pool = get_provider_pool_or_legacy()
     configs = pool.configs.copy()
 
-    # Top Section: Pool Display
-    pool_frame = ctk.CTkScrollableFrame(help_win, height=150)
-    pool_frame.pack(fill="x", padx=20, pady=(0, 20))
+    # Create Tabview for API Configs
+    tabview = ctk.CTkTabview(help_win, height=220)
+    tabview.pack(fill="x", padx=20, pady=(0, 20))
+    
+    text_tab = tabview.add("Text Models (Reasoning)")
+    vision_tab = tabview.add("Vision Models (Images)")
+
+    pool_frame_text = ctk.CTkScrollableFrame(text_tab, height=140)
+    pool_frame_text.pack(fill="both", expand=True, padx=5, pady=5)
+
+    pool_frame_vision = ctk.CTkScrollableFrame(vision_tab, height=140)
+    pool_frame_vision.pack(fill="both", expand=True, padx=5, pady=5)
 
     def refresh_pool_display():
-        for widget in pool_frame.winfo_children():
+        for widget in pool_frame_text.winfo_children():
+            widget.destroy()
+        for widget in pool_frame_vision.winfo_children():
             widget.destroy()
         
         for idx, config in enumerate(configs):
-            row = ctk.CTkFrame(pool_frame, fg_color="transparent")
+            parent_frame = pool_frame_vision if getattr(config, "capability", "text") == "vision" else pool_frame_text
+            row = ctk.CTkFrame(parent_frame, fg_color="transparent")
             row.pack(fill="x", pady=2)
             
             k = config.api_key
@@ -270,8 +282,11 @@ def _show_env_help_popup(root):
         if not k and "Ollama" not in p:
             messagebox.showerror("Error", "API Key is required for remote providers.", parent=help_win)
             return
+            
+        current_tab = tabview.get()
+        cap = "vision" if current_tab == "Vision Models (Images)" else "text"
 
-        configs.append(ProviderConfig(provider=p, endpoint_url=e, api_key=k, model_name=m))
+        configs.append(ProviderConfig(provider=p, endpoint_url=e, api_key=k, model_name=m, capability=cap))
         refresh_pool_display()
         
         # clear fields

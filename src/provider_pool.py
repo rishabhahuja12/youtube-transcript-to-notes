@@ -8,6 +8,7 @@ class ProviderConfig:
     endpoint_url: str    # e.g. "https://generativelanguage.googleapis.com/..."
     api_key: str         # The API key (masked in logs)
     model_name: str      # e.g. "gemini-3.5-flash", "llama-3.3-70b"
+    capability: str = "text"  # "text" or "vision"
 
 
 class ProviderPool:
@@ -73,6 +74,14 @@ class ProviderPool:
             return "Empty Pool"
         provider = self.current.provider
         return f"Config {self.current_index}/{self.total} ({provider})"
+
+    def get_text_pool(self) -> "ProviderPool":
+        """Return a new ProviderPool containing only text models."""
+        return ProviderPool([c for c in self._configs if c.capability == "text"])
+
+    def get_vision_pool(self) -> "ProviderPool":
+        """Return a new ProviderPool containing only vision models."""
+        return ProviderPool([c for c in self._configs if c.capability == "vision"])
         
     @staticmethod
     def from_json(json_str: str) -> "ProviderPool":
@@ -81,7 +90,12 @@ class ProviderPool:
             return ProviderPool([])
         try:
             data = json.loads(json_str)
-            configs = [ProviderConfig(**item) for item in data]
+            configs = []
+            for item in data:
+                # Provide default capability if missing
+                if "capability" not in item:
+                    item["capability"] = "text"
+                configs.append(ProviderConfig(**item))
             return ProviderPool(configs)
         except Exception:
             return ProviderPool([])
@@ -104,6 +118,7 @@ class ProviderPool:
             provider=provider or "Groq",
             endpoint_url=endpoint_url,
             api_key=api_key or "",
-            model_name=model_name
+            model_name=model_name,
+            capability="text"
         )
         return ProviderPool([config])
