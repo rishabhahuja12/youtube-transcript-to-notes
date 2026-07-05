@@ -357,7 +357,8 @@ def _get_shared_pdf_css(theme="Textbook"):
         """
     elif theme == "ChatGPT Dark":
         theme_css = """
-        body { color: #ececf1; background-color: #212121; }
+        @page { margin: 0; }
+        body { color: #ececf1; background-color: #212121; padding: 20mm; min-height: 100vh; box-sizing: border-box; }
         h1 { color: #ffffff; font-size: 24pt; border-bottom: 1px solid #4d4d4d; padding-bottom: 6px; }
         h2 { color: #f9f9f9; font-size: 18pt; border-bottom: 1px solid #3d3d3d; padding-bottom: 4px; }
         h3 { color: #b0b0b0; font-size: 14pt; margin-top: 1.2em; }
@@ -373,7 +374,6 @@ def _get_shared_pdf_css(theme="Textbook"):
             pre { background-color: #0d0d0d !important; color: #ececf1 !important; }
             blockquote { background-color: #2f2f2f !important; }
         }
-        @page { background-color: #212121; }
         """
     else: # Minimal Mono
         theme_css = """
@@ -435,7 +435,7 @@ def convert_and_save_pdf(log_fn, root, theme="Textbook"):
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
                 page.set_content(full_html)
-                page.pdf(path=pdf_file, format="A4", margin={"top": "20px", "right": "20px", "bottom": "20px", "left": "20px"})
+                page.pdf(path=pdf_file, format="A4", print_background=True)
                 browser.close()
 
             log_fn(f"SUCCESS: Saved PDF to {pdf_file}")
@@ -492,7 +492,7 @@ def preview_pdf(log_fn, root, theme="Textbook"):
                 browser = p.chromium.launch(headless=True)
                 page = browser.new_page()
                 page.set_content(full_html)
-                page.pdf(path=temp_pdf, format="A4", margin={"top": "20px", "right": "20px", "bottom": "20px", "left": "20px"})
+                page.pdf(path=temp_pdf, format="A4", print_background=True)
                 browser.close()
 
             log_fn("SUCCESS: Preview generated. Opening...")
