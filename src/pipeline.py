@@ -37,6 +37,8 @@ def run_pipeline(
     on_log: callable,
     on_progress: callable,
     video_title: str = None,
+    enable_multimodal: bool = False,
+    youtube_url: str = None,
 ) -> dict:
     """Run the full notes-generation pipeline.
 
@@ -112,9 +114,30 @@ def run_pipeline(
         on_log("Assigning segments to chapters...")
         chapter_texts = assign_chapters(merged, chapters)
 
+        chapter_frames = None
+        if enable_multimodal and youtube_url:
+            try:
+                on_log("Step 2.5: Downloading video and extracting frames...")
+                from src.frame_extractor import download_video, extract_key_frames, assign_frames_to_chapters
+                frames_dir = os.path.join(output_dir, "frames")
+                video_path = download_video(youtube_url, frames_dir)
+                on_log(f"Video downloaded to {video_path}, extracting frames...")
+                frames = extract_key_frames(video_path, frames_dir)
+                on_log(f"Extracted {len(frames)} frames. Assigning to chapters...")
+                chapter_frames = assign_frames_to_chapters(frames, chapters)
+                on_log("Frame extraction and assignment complete.")
+                # Clean up video file to save disk space
+                try:
+                    os.remove(video_path)
+                except OSError as e:
+                    on_log(f"WARNING: Cleanup failed for {video_path}: {e}")
+            except Exception as e:
+                on_log(f"WARNING: Frame extraction failed: {e}. Continuing without visuals.")
+                chapter_frames = None
+
         return _run_llm_pipeline(
             chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
-            video_title=video_title,
+            video_title=video_title, chapter_frames=chapter_frames
         )
 
     except Exception as e:
@@ -131,6 +154,8 @@ def run_pipeline_from_data(
     on_log: callable,
     on_progress: callable,
     video_title: str = None,
+    enable_multimodal: bool = False,
+    youtube_url: str = None,
 ) -> dict:
     """Run the pipeline from pre-extracted data (e.g. YouTube URL extraction).
 
@@ -155,9 +180,30 @@ def run_pipeline_from_data(
         on_log("Assigning segments to chapters...")
         chapter_texts = assign_chapters(merged, chapters)
 
+        chapter_frames = None
+        if enable_multimodal and youtube_url:
+            try:
+                on_log("Step 2.5: Downloading video and extracting frames...")
+                from src.frame_extractor import download_video, extract_key_frames, assign_frames_to_chapters
+                frames_dir = os.path.join(output_dir, "frames")
+                video_path = download_video(youtube_url, frames_dir)
+                on_log(f"Video downloaded to {video_path}, extracting frames...")
+                frames = extract_key_frames(video_path, frames_dir)
+                on_log(f"Extracted {len(frames)} frames. Assigning to chapters...")
+                chapter_frames = assign_frames_to_chapters(frames, chapters)
+                on_log("Frame extraction and assignment complete.")
+                # Clean up video file to save disk space
+                try:
+                    os.remove(video_path)
+                except OSError as e:
+                    on_log(f"WARNING: Cleanup failed for {video_path}: {e}")
+            except Exception as e:
+                on_log(f"WARNING: Frame extraction failed: {e}. Continuing without visuals.")
+                chapter_frames = None
+
         return _run_llm_pipeline(
             chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
-            video_title=video_title,
+            video_title=video_title, chapter_frames=chapter_frames
         )
 
     except Exception as e:
@@ -174,6 +220,7 @@ def _run_llm_pipeline(
     on_log: callable,
     on_progress: callable,
     video_title: str = None,
+    chapter_frames: dict = None,
 ):
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
     detailed_path = ""
@@ -209,8 +256,8 @@ def _run_llm_pipeline(
                         )
                 else:
                     on_log("Checkpoint signature mismatch, starting fresh.")
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError) as e:
+                on_log(f"WARNING: Failed to read checkpoint: {e}")
 
         # ------------------------------------------------------------------
         # Step 3: Call LLM for each chapter
@@ -269,6 +316,14 @@ def _run_llm_pipeline(
                 f"correct code or formulas."
             )
 
+            assigned_frames = chapter_frames.get(idx, []) if chapter_frames else []
+            if assigned_frames:
+                user_prompt += (
+                    f"\n\nAttached are key visual frames from this chapter. "
+                    f"Use them to enhance the notes if they contain relevant visual "
+                    f"information (e.g. diagrams, slide text)."
+                )
+
             est_tokens = estimate_tokens(ch_text + user_prompt)
             max_retries = 3
             retry_delay = 20  # seconds
@@ -295,6 +350,7 @@ def _run_llm_pipeline(
                             "based on its transcript segment."
                         ),
                         user_prompt=user_prompt,
+                        images=assigned_frames,
                     )
                     # Update rate limiter with actual output tokens
                     if response:
@@ -343,6 +399,13 @@ def _run_llm_pipeline(
                 break
 
             if response:
+                if assigned_frames:
+                    frame_markdown = "\n\n### Key Visuals\n"
+                    for frame_path in assigned_frames:
+                        frame_name = os.path.basename(frame_path)
+                        # Reference it relatively to the output directory
+                        frame_markdown += f"![Chapter {idx+1} - Slide](frames/{frame_name})\n"
+                    response += frame_markdown
                 detailed_notes_sections.append(response)
                 completed_notes[str(idx)] = response
             else:
@@ -363,8 +426,8 @@ def _run_llm_pipeline(
                         "signature": checkpoint_signature, 
                         "completed_notes": completed_notes
                     }, f)
-            except Exception:
-                pass
+            except OSError as e:
+                on_log(f"WARNING: Failed to write checkpoint: {e}")
 
             # Report progress after each chapter
             on_progress(idx + 1, total_chapters)
@@ -570,8 +633,8 @@ def _run_llm_pipeline(
         if os.path.exists(checkpoint_path):
             try:
                 os.remove(checkpoint_path)
-            except Exception:
-                pass
+            except OSError as e:
+                on_log(f"WARNING: Checkpoint cleanup failed: {e}")
         return {
             "success": True,
             "detailed_path": detailed_path,

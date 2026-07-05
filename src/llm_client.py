@@ -217,7 +217,7 @@ def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str) -
 
 # ─────────────────────── Core LLM Call ────────────────────────────────────
 
-def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_prompt):
+def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_prompt, images=None):
     """Make raw POST HTTP call to Ollama or OpenAI compatible endpoint."""
     url = endpoint_url.strip()
     headers = {
@@ -227,7 +227,23 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": user_prompt})
+    
+    if images and provider == "Gemini":
+        import base64
+        content_list = [{"type": "text", "text": user_prompt}]
+        for img_path in images:
+            try:
+                with open(img_path, "rb") as f:
+                    b64_img = base64.b64encode(f.read()).decode("utf-8")
+                    content_list.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                    })
+            except OSError as e:
+                print(f"Error reading image {img_path}: {e}")
+        messages.append({"role": "user", "content": content_list})
+    else:
+        messages.append({"role": "user", "content": user_prompt})
     
     if provider == "Ollama":
         # Normalize Ollama native URL or OpenAI compatible URL

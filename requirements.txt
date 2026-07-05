@@ -4,9 +4,9 @@ customtkinter>=5.2.0
 # YouTube Extraction
 youtube-transcript-api>=0.6.0
 yt-dlp>=2024.0.0
+opencv-python>=4.8.0
 
 # PDF Export (optional — install via UI button)
-markdown-pdf>=1.0.0
-
+# playwright (installed dynamically via UI button)
 # Testing
 pytest>=7.0.0

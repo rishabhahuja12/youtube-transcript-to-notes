@@ -499,7 +499,14 @@ def convert_and_save_pdf(log_fn, root, theme="Textbook"):
             html_content = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
             custom_css = _get_shared_pdf_css(theme)
             
-            full_html = f"<html><head><style>{custom_css}</style></head><body>{html_content}</body></html>"
+            full_html = (
+                f"<html><head>"
+                f"<style>{custom_css}</style>"
+                f'<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>'
+                f"</head><body>{html_content}"
+                f"<script>mermaid.initialize({{startOnLoad:true}});</script>"
+                f"</body></html>"
+            )
 
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
@@ -554,7 +561,14 @@ def preview_pdf(log_fn, root, theme="Textbook"):
             html_content = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
             custom_css = _get_shared_pdf_css(theme)
             
-            full_html = f"<html><head><style>{custom_css}</style></head><body>{html_content}</body></html>"
+            full_html = (
+                f"<html><head>"
+                f"<style>{custom_css}</style>"
+                f'<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>'
+                f"</head><body>{html_content}"
+                f"<script>mermaid.initialize({{startOnLoad:true}});</script>"
+                f"</body></html>"
+            )
 
             temp_pdf = os.path.join(tempfile.gettempdir(), "yt_transcriptor_preview.pdf")
 
@@ -597,6 +611,7 @@ def main():
     youtube_url_var = tk.StringVar()
     topic_title_var = tk.StringVar()
     pdf_theme_var = tk.StringVar(value="Textbook")
+    multimodal_var = tk.BooleanVar(value=False)
 
     # ── Console log helper with file mirroring ──
     def log_message(msg):
@@ -661,6 +676,14 @@ def main():
             if not url:
                 messagebox.showerror("Validation Error", "Please paste a YouTube URL.")
                 return
+            if multimodal_var.get():
+                ans = messagebox.askyesno(
+                    "Bandwidth Warning", 
+                    "Extracting video frames requires downloading the video.\nThis can use 50-200MB of bandwidth.\n\nDo you want to proceed?",
+                    parent=root
+                )
+                if not ans:
+                    return
         else:
             save_config(transcript_path_var, timestamps_path_var, output_dir_var)
             transcript_path = transcript_path_var.get().strip()
@@ -731,6 +754,8 @@ def main():
                         on_log=log_message,
                         on_progress=on_progress,
                         video_title=data.get('metadata', {}).get('title'),
+                        enable_multimodal=multimodal_var.get(),
+                        youtube_url=url,
                     )
                 else:
                     result = run_pipeline(
@@ -897,6 +922,11 @@ def main():
                  placeholder_text="Select output directory...").grid(row=0, column=0, sticky="we", padx=(0, 5))
     ctk.CTkButton(yt_output_frame, text="Browse", width=80, font=("Segoe UI", 10, "bold"),
                   command=browse_output_dir).grid(row=0, column=1, sticky="e")
+                  
+    ctk.CTkCheckBox(
+        yt_tab, text="Extract Video Frames (Multimodal)",
+        variable=multimodal_var, font=("Segoe UI", 11)
+    ).grid(row=5, column=0, columnspan=2, sticky="w", padx=5, pady=(10, 0))
 
     # ── Manual Files Tab ──
     files_tab = input_tabs.add("Manual Files")
