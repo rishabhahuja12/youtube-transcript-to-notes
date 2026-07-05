@@ -238,11 +238,11 @@ def _show_env_help_popup(root):
 def install_pdf_library(log_fn, root):
     """Install playwright, markdown, and pygments into the local .venv."""
     pip_path = os.path.join(SCRIPT_DIR, ".venv", "Scripts", "pip")
-    playwright_path = os.path.join(SCRIPT_DIR, ".venv", "Scripts", "playwright")
+    python_path = os.path.join(SCRIPT_DIR, ".venv", "Scripts", "python")
     if os.path.exists(pip_path + ".exe"):
         pip_path += ".exe"
-    if os.path.exists(playwright_path + ".exe"):
-        playwright_path += ".exe"
+    if os.path.exists(python_path + ".exe"):
+        python_path += ".exe"
 
     def run_install():
         log_fn("Running pip install playwright markdown pygments...")
@@ -264,14 +264,8 @@ def install_pdf_library(log_fn, root):
                 return
 
             log_fn("Installing chromium for playwright...")
-            if not os.path.exists(playwright_path) and not os.path.exists(playwright_path + ".exe"):
-                # fallback if playwright script isn't found
-                playwright_path_to_use = "playwright"
-            else:
-                playwright_path_to_use = playwright_path
-
             process2 = subprocess.Popen(
-                [playwright_path_to_use, "install", "chromium"],
+                [python_path, "-m", "playwright", "install", "chromium"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
