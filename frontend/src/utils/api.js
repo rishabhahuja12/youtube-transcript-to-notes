@@ -22,7 +22,8 @@ export const fetchNotes = async (id, file) => {
     signal: AbortSignal.timeout(30000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-  return await response.text();
+  const data = await response.json();
+  return data.content;
 };
 
 export const connectPipelineWebSocket = (onMessage) => {
@@ -31,7 +32,7 @@ export const connectPipelineWebSocket = (onMessage) => {
   const maxReconnectAttempts = 5;
 
   const connect = () => {
-    ws = new WebSocket(`${WS_BASE_URL}/ws/pipeline`);
+    ws = new WebSocket(`${WS_BASE_URL}/api/pipeline/stream`);
     
     ws.onmessage = (event) => {
       try {
