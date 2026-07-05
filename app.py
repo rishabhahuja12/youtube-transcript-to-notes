@@ -334,6 +334,8 @@ def _get_shared_pdf_css(theme="Textbook"):
     body { font-family: 'Segoe UI', Helvetica, sans-serif; line-height: 1.5; }
     h1 { break-before: page; margin-top: 0; }
     h1:first-of-type { break-before: auto; }
+    h1, h2, h3, h4, h5, h6 { break-after: avoid; }
+    pre, blockquote, table, tr { break-inside: avoid; }
     table { width: 100%; border-collapse: collapse; margin: 1em 0; }
     @page { margin: 20mm; }
     """
@@ -351,21 +353,6 @@ def _get_shared_pdf_css(theme="Textbook"):
         td { padding: 10px; border: 1px solid #cbd5e1; }
         tr:nth-child(even) { background-color: #f8fafc; }
         a { color: #2563eb; text-decoration: none; }
-        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        """
-    elif theme == "Dark Academic":
-        theme_css = """
-        body { color: #e2e8f0; background-color: #0f172a; }
-        h1 { color: #fbbf24; font-size: 26pt; border-bottom: 3px solid #b45309; padding-bottom: 6px; }
-        h2 { color: #fcd34d; font-size: 18pt; border-bottom: 1px solid #475569; padding-bottom: 4px; }
-        h3 { color: #34d399; font-size: 14pt; margin-top: 1.2em; }
-        pre { background-color: #1e293b; padding: 12px; border-left: 4px solid #64748b; font-family: 'Courier New', Courier, monospace; font-size: 10pt; white-space: pre-wrap; color: #cbd5e1; }
-        code { background-color: #334155; color: #fca5a5; padding: 2px 5px; font-family: 'Courier New', Courier, monospace; }
-        blockquote { border-left: 4px solid #fbbf24; background-color: #1e293b; padding: 10px 15px; color: #94a3b8; font-style: italic; }
-        th { background-color: #334155; font-weight: bold; padding: 10px; border: 1px solid #475569; color: #f8fafc; text-align: left; }
-        td { padding: 10px; border: 1px solid #475569; }
-        tr:nth-child(even) { background-color: #1e293b; }
-        a { color: #60a5fa; text-decoration: none; }
         @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         """
     else: # Minimal Mono
@@ -859,7 +846,7 @@ def main():
     
     ctk.CTkOptionMenu(
         pdf_tab, variable=pdf_theme_var,
-        values=["Textbook", "Dark Academic", "Minimal Mono"],
+        values=["Textbook", "Minimal Mono"],
         font=("Segoe UI", 11)
     ).grid(row=1, column=1, sticky="w", padx=5, pady=4)
 
@@ -970,7 +957,7 @@ def main():
 
     pdf_theme_menu = ctk.CTkOptionMenu(
         actions_inner, variable=pdf_theme_var,
-        values=["Textbook", "Dark Academic", "Minimal Mono"],
+        values=["Textbook", "Minimal Mono"],
         font=("Segoe UI", 11)
     )
 
