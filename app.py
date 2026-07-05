@@ -1058,7 +1058,7 @@ def main():
     
     chat_model_var = tk.StringVar(value="llama3")
     chat_model_dropdown = ctk.CTkOptionMenu(
-        chat_tab, variable=chat_model_var, values=["llama3", "phi3", "mistral", "gemma"], width=100, font=("Segoe UI", 11)
+        chat_tab, variable=chat_model_var, values=["llama3", "phi3", "mistral", "gemma", "qwen2.5:3b"], width=100, font=("Segoe UI", 11)
     )
     chat_model_dropdown.grid(row=1, column=2, sticky="e", padx=(5, 5), pady=4)
     
@@ -1105,10 +1105,10 @@ def main():
         def run_chat():
             from src.chat import ChatSession
             try:
-                if chat_state["session"] is None or chat_state["session"].folder_path != folder or chat_state["session"].model_name != chat_model_var.get():
+                if chat_state["session"] is None or chat_state["session"].notes_dir != folder or chat_state["session"].ollama_model != chat_model_var.get():
                     chat_state["session"] = ChatSession(folder, chat_model_var.get())
                 
-                response = chat_state["session"].chat(user_msg)
+                response = chat_state["session"].send(user_msg)
                 
                 def update_ui():
                     chat_log.configure(state="normal")

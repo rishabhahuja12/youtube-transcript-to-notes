@@ -301,7 +301,7 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
         raise ConnectionError(f"Connection failure: {str(e)}") from e
 
 
-def call_ollama_chat(messages: list, model: str) -> str:
+def call_ollama_chat(model: str, messages: list) -> str:
     """Make raw POST HTTP call to local Ollama chat endpoint."""
     url = "http://localhost:11434/api/chat"
     payload = {
