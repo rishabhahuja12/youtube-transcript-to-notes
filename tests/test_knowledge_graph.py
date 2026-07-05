@@ -15,7 +15,7 @@ def test_extract_concepts_success(mock_call_llm):
     """Test successful extraction of concepts returning valid JSON."""
     mock_response = '''```json
 {
-  "nodes": [{"id": "Concept1", "label": "Concept One", "group": 1}],
+  "nodes": [{"id": "Concept1", "label": "Concept One", "group": "Chapter 1", "definition": "A concept", "section_anchor": "#ch1"}],
   "edges": [{"source": "Concept1", "target": "Concept2", "label": "relates to"}]
 }
 ```'''
@@ -36,7 +36,7 @@ def test_extract_concepts_success(mock_call_llm):
 def test_build_graph():
     """Test graph building logic and missing node creation."""
     graph_data = {
-        "nodes": [{"id": "Concept1", "label": "Concept One", "group": 1}],
+        "nodes": [{"id": "Concept1", "label": "Concept One", "group": "Chapter 1", "definition": "A concept", "section_anchor": "#ch1"}],
         "edges": [{"source": "Concept1", "target": "Concept2", "label": "relates to"}]
     }
     
@@ -45,22 +45,24 @@ def test_build_graph():
     # Should create Concept2 node automatically
     assert len(valid_graph["nodes"]) == 2
     assert any(n["id"] == "Concept2" for n in valid_graph["nodes"])
-    assert "links" in valid_graph
-    assert len(valid_graph["links"]) == 1
+    assert "edges" in valid_graph
+    assert len(valid_graph["edges"]) == 1
 
 def test_render_html():
     """Test HTML rendering contains necessary components."""
     graph_data = {
-        "nodes": [{"id": "Concept1", "label": "Concept One", "group": 1}],
+        "nodes": [{"id": "Concept1", "label": "Concept One", "group": "Chapter 1", "definition": "A concept", "section_anchor": "#ch1"}],
         "edges": [{"source": "Concept1", "target": "Concept2", "label": "relates to"}]
     }
     
     html = render_html(graph_data)
     
     assert "mermaid" in html.lower()
+    assert "subgraph Chapter_1" in html
     assert "Concept1" in html
     assert "Concept2" in html
     assert "relates to" in html
+    assert 'click Concept1 "#ch1" "A concept"' in html
 
 @patch("src.knowledge_graph.call_llm")
 def test_extract_concepts_error(mock_call_llm):

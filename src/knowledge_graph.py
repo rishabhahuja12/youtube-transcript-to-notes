@@ -21,9 +21,13 @@ def extract_concepts(markdown_text: str, provider_config: ProviderConfig, on_log
         "build a Knowledge Graph.\n\n"
         "Return a JSON object with this exact structure:\n"
         "{\n"
-        '  "nodes": [{"id": "Concept", "label": "Concept Name", "group": 1}],\n'
+        '  "nodes": [{"id": "Concept", "label": "Concept Name", "group": "Chapter Name", '
+        '"definition": "Short definition", "section_anchor": "#anchor-link"}],\n'
         '  "edges": [{"source": "Concept1", "target": "Concept2", "label": "relationship"}]\n'
         "}\n\n"
+        "The 'group' should be the topic or chapter name.\n"
+        "The 'definition' should be a concise definition for tooltips.\n"
+        "The 'section_anchor' should be the exact markdown anchor link (e.g. #1-chapter-name).\n"
         "Keep the graph concise but comprehensive (max 30-50 nodes).\n"
         "Text to process:\n"
         "---\n"
@@ -75,14 +79,14 @@ def build_graph(graph_data: dict) -> dict:
         source = edge.get("source")
         target = edge.get("target")
         if source not in node_ids:
-            nodes.append({"id": source, "label": source, "group": 1})
+            nodes.append({"id": source, "label": source, "group": "Other"})
             node_ids.add(source)
         if target not in node_ids:
-            nodes.append({"id": target, "label": target, "group": 1})
+            nodes.append({"id": target, "label": target, "group": "Other"})
             node_ids.add(target)
         valid_edges.append(edge)
         
-    return {"nodes": nodes, "links": valid_edges}  # 3d-force-graph uses 'links' instead of 'edges'
+    return {"nodes": nodes, "edges": valid_edges}
 
 def render_html(graph_data: dict) -> str:
     """Render the graph data into an HTML string using Mermaid.js CDN.
@@ -95,18 +99,56 @@ def render_html(graph_data: dict) -> str:
     """
     valid_graph = build_graph(graph_data)
     nodes = valid_graph.get("nodes", [])
-    links = valid_graph.get("links", [])
+    edges = valid_graph.get("edges", [])
     
     mermaid_lines = ["graph TD;"]
     
-    # Add nodes (escape quotes and parentheses to avoid syntax errors)
+    # Group nodes by their 'group' property
+    from collections import defaultdict
+    groups = defaultdict(list)
     for node in nodes:
-        node_id = str(node.get("id")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
-        node_label = str(node.get("label", node_id)).replace('"', '').replace("(", "").replace(")", "")
-        mermaid_lines.append(f'    {node_id}["{node_label}"];')
+        group = node.get("group", "Other")
+        groups[group].append(node)
         
+    for group, group_nodes in groups.items():
+        if group != "Other":
+            # Sanitize group name for subgraph id
+            group_id = str(group).replace(' ', '_').replace('"', '').replace('(', '').replace(')', '')
+            # Subgraph name can be quoted if it has spaces, but safer to use id and label
+            mermaid_lines.append(f'    subgraph {group_id} ["{str(group).replace(chr(34), "")}"]')
+            
+        for node in group_nodes:
+            node_id = str(node.get("id")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
+            node_label = str(node.get("label", node_id)).replace('"', '').replace("(", "").replace(")", "")
+            # Node definition
+            if group != "Other":
+                mermaid_lines.append(f'        {node_id}["{node_label}"];')
+            else:
+                mermaid_lines.append(f'    {node_id}["{node_label}"];')
+                
+            # Interactivity (Click directive)
+            anchor = node.get("section_anchor", "#")
+            if anchor and not anchor.startswith("#"):
+                anchor = "#" + anchor
+            definition = str(node.get("definition", "")).replace('"', "'")
+            
+            # Click syntax: click nodeId "link" "tooltip"
+            if group != "Other":
+                if definition:
+                    mermaid_lines.append(f'        click {node_id} "{anchor}" "{definition}"')
+                else:
+                    mermaid_lines.append(f'        click {node_id} "{anchor}"')
+            else:
+                if definition:
+                    mermaid_lines.append(f'    click {node_id} "{anchor}" "{definition}"')
+                else:
+                    mermaid_lines.append(f'    click {node_id} "{anchor}"')
+
+        if group != "Other":
+            mermaid_lines.append("    end")
+            
     # Add edges
-    for link in links:
+    for link in edges:
         source = str(link.get("source")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
         target = str(link.get("target")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
         label = str(link.get("label", "")).replace('"', '').replace("(", "").replace(")", "")
