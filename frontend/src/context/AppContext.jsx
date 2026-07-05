@@ -31,7 +31,7 @@ export const AppProvider = ({ children }) => {
     const checkStatus = async () => {
       try {
         const data = await fetchOllamaStatus();
-        dispatch({ type: 'SET_OLLAMA_STATUS', payload: data.status === 'ok' ? 'online' : 'offline' });
+        dispatch({ type: 'SET_OLLAMA_STATUS', payload: data.ollama === true ? 'online' : 'offline' });
       } catch (error) {
         dispatch({ type: 'SET_OLLAMA_STATUS', payload: 'offline' });
       }

@@ -159,7 +159,7 @@ p {
 }
 
 .nav-item.active {
-  background: rgba(99, 102, 241, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--accent);
   border-color: transparent;
   border-left: 4px solid var(--accent);
@@ -265,7 +265,7 @@ p {
   background: linear-gradient(90deg, var(--accent), var(--accent-hover));
   border-radius: 3px;
   transition: width var(--transition-slow);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 .log-drawer-toggle {
@@ -342,9 +342,9 @@ p {
 
 /* Animations */
 @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
-  70% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 70%, transparent); }
+  70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--warning) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 0%, transparent); }
 }
 
 /* Scrollbar styling */

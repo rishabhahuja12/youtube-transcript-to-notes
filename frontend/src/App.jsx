@@ -2,6 +2,7 @@ import React from 'react';
 import Sidebar from './components/Sidebar';
 import FooterDock from './components/FooterDock';
 import { AppProvider, useAppContext } from './context/AppContext';
+import { ErrorBoundary } from 'react-error-boundary';
 
 const MainContent = () => {
   const { currentScreen, pipelineStatus, pipelineLogs } = useAppContext();
@@ -24,8 +25,6 @@ const MainContent = () => {
     </main>
   );
 };
-
-import { ErrorBoundary } from 'react-error-boundary';
 
 function Fallback({ error }) {
   return (
