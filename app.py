@@ -707,8 +707,9 @@ def main():
 
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=0)    # Header
-    root.grid_rowconfigure(1, weight=1)    # PanedWindow (top panel + console)
+    root.grid_rowconfigure(1, weight=0)    # Top panel (Files & Actions)
     root.grid_rowconfigure(2, weight=0)    # Progress bar
+    root.grid_rowconfigure(3, weight=1)    # Console area (expanding)
 
     # ── Header ──
     header_frame = ctk.CTkFrame(root, fg_color="transparent")
@@ -725,18 +726,12 @@ def main():
         font=("Segoe UI", 11), text_color="#a1a1aa"
     ).pack(anchor="w", pady=(2, 0))
 
-    # ── PanedWindow: Top Content + Console (user-resizable) ──
-    paned = tk.PanedWindow(root, orient=tk.VERTICAL, sashwidth=8,
-                           bg="#3f3f46", sashrelief=tk.FLAT, opaqueresize=True)
-    paned.grid(row=1, column=0, sticky="nsew", padx=PAD, pady=(0, 5))
-
     # ── Top Panel (Files + Actions) ──
-    top_container = ctk.CTkFrame(paned, fg_color="transparent")
-    paned.add(top_container, minsize=250)
+    top_container = ctk.CTkFrame(root, fg_color="transparent")
+    top_container.grid(row=1, column=0, sticky="ew", padx=PAD, pady=(0, 5))
     top_container.grid_columnconfigure(0, weight=3)
     top_container.grid_columnconfigure(1, weight=1)
     top_container.grid_rowconfigure(0, weight=1)
-    top_container.grid_rowconfigure(1, weight=1)
 
     # Input card with tabs
     input_card = ctk.CTkFrame(top_container, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
@@ -848,37 +843,9 @@ def main():
 
     input_tabs.set("YouTube URL")  # Default to YouTube tab
 
-    # ── History Card ──
-    history_card = ctk.CTkFrame(top_container, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
-    history_card.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(10, 0))
-
-    ctk.CTkLabel(history_card, text="Recent Generations", font=("Segoe UI", 12, "bold"), text_color="#a1a1aa").pack(anchor="w", padx=15, pady=(10, 5))
-    
-    history_inner = ctk.CTkScrollableFrame(history_card, fg_color="transparent", height=60)
-    history_inner.pack(fill="both", expand=True, padx=5, pady=5)
-    
-    def refresh_history():
-        for widget in history_inner.winfo_children():
-            widget.destroy()
-        
-        recents = load_recent_outputs()
-        if not recents:
-            ctk.CTkLabel(history_inner, text="No recent outputs.", font=("Segoe UI", 10, "italic"), text_color="#71717a").pack(anchor="w", padx=10, pady=5)
-        else:
-            for path in recents:
-                btn = ctk.CTkButton(
-                    history_inner, text=os.path.basename(path) or path, 
-                    anchor="w", fg_color="transparent", hover_color="#27272a", 
-                    text_color="#60a5fa", height=24,
-                    command=lambda p=path: _open_path(p)
-                )
-                btn.pack(fill="x", padx=5, pady=2)
-
-    refresh_history()
-
     # Actions card
     actions_card = ctk.CTkFrame(top_container, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
-    actions_card.grid(row=0, column=1, rowspan=2, sticky="nsew")
+    actions_card.grid(row=0, column=1, sticky="nsew")
 
     ctk.CTkLabel(actions_card, text="Pipeline Controls", font=("Segoe UI", 14, "bold"), text_color="#10b981").pack(anchor="w", padx=15, pady=(12, 8))
 
@@ -910,6 +877,43 @@ def main():
         command=lambda: _open_path(output_dir_var.get().strip()) if output_dir_var.get().strip() else None
     )
     open_output_btn.pack(fill="x", pady=(0, 5))
+
+    # ── Recents Popup Button ──
+    def show_recents_popup():
+        recents = load_recent_outputs()
+        popup = ctk.CTkToplevel(root)
+        popup.title("Recent Generations")
+        popup.geometry("450x300")
+        popup.transient(root)
+        popup.grab_set()
+        popup.attributes("-topmost", True)
+
+        ctk.CTkLabel(popup, text="Recent Output Folders", font=("Segoe UI", 14, "bold"),
+                     text_color="#3b82f6").pack(anchor="w", padx=15, pady=(15, 10))
+
+        if not recents:
+            ctk.CTkLabel(popup, text="No recent outputs yet.", font=("Segoe UI", 11, "italic"),
+                         text_color="#71717a").pack(anchor="w", padx=15, pady=10)
+        else:
+            scroll = ctk.CTkScrollableFrame(popup, fg_color="transparent")
+            scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+            for path in recents:
+                ctk.CTkButton(
+                    scroll, text=os.path.basename(path) or path,
+                    anchor="w", fg_color="#27272a", hover_color="#3f3f46",
+                    text_color="#60a5fa", height=30, font=("Segoe UI", 11),
+                    command=lambda p=path: (_open_path(p), popup.destroy())
+                ).pack(fill="x", padx=5, pady=3)
+
+        ctk.CTkButton(popup, text="Close", font=("Segoe UI", 11, "bold"),
+                      fg_color="#3f3f46", hover_color="#52525b", height=30,
+                      command=popup.destroy).pack(pady=(5, 15))
+
+    ctk.CTkButton(
+        actions_inner, text="📁 Recent Generations",
+        font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b", height=35,
+        command=show_recents_popup
+    ).pack(fill="x", pady=(0, 5))
 
     pdf_theme_menu = ctk.CTkOptionMenu(
         actions_inner, variable=pdf_theme_var,
@@ -948,9 +952,9 @@ def main():
     progress_bar.pack(fill="x", pady=(2, 0))
     progress_bar.set(0)
 
-    # ── Console (inside PanedWindow — drag the sash to resize!) ──
-    console_card = ctk.CTkFrame(paned, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
-    paned.add(console_card, minsize=200)
+    # ── Console ──
+    console_card = ctk.CTkFrame(root, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
+    console_card.grid(row=3, column=0, sticky="nsew", padx=PAD, pady=5)
 
     console_header = ctk.CTkFrame(console_card, fg_color="transparent")
     console_header.pack(fill="x", padx=15, pady=(12, 8))
