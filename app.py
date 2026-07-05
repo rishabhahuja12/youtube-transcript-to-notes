@@ -707,9 +707,8 @@ def main():
 
     root.grid_columnconfigure(0, weight=1)
     root.grid_rowconfigure(0, weight=0)    # Header
-    root.grid_rowconfigure(1, weight=0)    # Top panel (Files & Actions)
+    root.grid_rowconfigure(1, weight=1)    # PanedWindow (top panel + console)
     root.grid_rowconfigure(2, weight=0)    # Progress bar
-    root.grid_rowconfigure(3, weight=1)    # Console area (expanding)
 
     # ── Header ──
     header_frame = ctk.CTkFrame(root, fg_color="transparent")
@@ -726,9 +725,14 @@ def main():
         font=("Segoe UI", 11), text_color="#a1a1aa"
     ).pack(anchor="w", pady=(2, 0))
 
+    # ── PanedWindow: Top Content + Console (user-resizable) ──
+    paned = tk.PanedWindow(root, orient=tk.VERTICAL, sashwidth=8,
+                           bg="#3f3f46", sashrelief=tk.FLAT, opaqueresize=True)
+    paned.grid(row=1, column=0, sticky="nsew", padx=PAD, pady=(0, 5))
+
     # ── Top Panel (Files + Actions) ──
-    top_container = ctk.CTkFrame(root, fg_color="transparent")
-    top_container.grid(row=1, column=0, sticky="nsew", padx=PAD, pady=(0, 5))
+    top_container = ctk.CTkFrame(paned, fg_color="transparent")
+    paned.add(top_container, minsize=250)
     top_container.grid_columnconfigure(0, weight=3)
     top_container.grid_columnconfigure(1, weight=1)
     top_container.grid_rowconfigure(0, weight=1)
@@ -944,9 +948,9 @@ def main():
     progress_bar.pack(fill="x", pady=(2, 0))
     progress_bar.set(0)
 
-    # ── Console ──
-    console_card = ctk.CTkFrame(root, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
-    console_card.grid(row=3, column=0, sticky="nsew", padx=PAD, pady=5)
+    # ── Console (inside PanedWindow — drag the sash to resize!) ──
+    console_card = ctk.CTkFrame(paned, corner_radius=CARD_RADIUS, border_width=1, border_color="#3f3f46")
+    paned.add(console_card, minsize=200)
 
     console_header = ctk.CTkFrame(console_card, fg_color="transparent")
     console_header.pack(fill="x", padx=15, pady=(12, 8))
