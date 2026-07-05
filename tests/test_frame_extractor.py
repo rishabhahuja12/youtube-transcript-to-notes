@@ -5,8 +5,8 @@ from src.frame_extractor import download_video, extract_key_frames, assign_frame
 
 def test_slugify():
     assert _slugify("Hello World!") == "hello-world"
-    assert _slugify("frame_10s.jpg") == "frame_10s.jpg"
-    assert _slugify("../traversal/file.txt") == "..traversalfile.txt"
+    assert _slugify("frame_10s.jpg") == "frame_10sjpg"
+    assert _slugify("../traversal/file.txt") == "traversalfiletxt"
 
 def test_assign_frames_to_chapters():
     frames = [

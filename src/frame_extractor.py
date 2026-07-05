@@ -85,7 +85,7 @@ def extract_key_frames(video_path: str, output_dir: str, method: str = "scene_ch
                 extract = True
                 
             if extract:
-                filename = _slugify(f"frame_{current_sec}s.jpg")
+                filename = _slugify(f"frame_{current_sec}s") + ".jpg"
                 frame_path = os.path.join(output_dir, filename)
                 cv2.imwrite(frame_path, frame)
                 frames.append({"path": frame_path, "timestamp_sec": current_sec})
@@ -137,4 +137,4 @@ def _slugify(text: str) -> str:
         str: The sanitized filename string.
     """
     text = text.lower().replace(" ", "-")
-    return re.sub(r'[^a-z0-9_\-\.]', '', text)
+    return re.sub(r'[^a-z0-9_\-]', '', text)

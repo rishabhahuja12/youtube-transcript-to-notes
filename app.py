@@ -499,12 +499,25 @@ def convert_and_save_pdf(log_fn, root, theme="Textbook"):
             html_content = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
             custom_css = _get_shared_pdf_css(theme)
             
+            mermaid_script = """
+            <script>
+                document.querySelectorAll('code.language-mermaid').forEach(function(codeBlock) {
+                    var pre = codeBlock.parentNode;
+                    var div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.textContent = codeBlock.textContent;
+                    pre.parentNode.replaceChild(div, pre);
+                });
+                mermaid.initialize({startOnLoad:true});
+            </script>
+            """
+            
             full_html = (
                 f"<html><head>"
                 f"<style>{custom_css}</style>"
                 f'<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>'
                 f"</head><body>{html_content}"
-                f"<script>mermaid.initialize({{startOnLoad:true}});</script>"
+                f"{mermaid_script}"
                 f"</body></html>"
             )
 
@@ -561,12 +574,25 @@ def preview_pdf(log_fn, root, theme="Textbook"):
             html_content = markdown.markdown(md_content, extensions=['fenced_code', 'tables'])
             custom_css = _get_shared_pdf_css(theme)
             
+            mermaid_script = """
+            <script>
+                document.querySelectorAll('code.language-mermaid').forEach(function(codeBlock) {
+                    var pre = codeBlock.parentNode;
+                    var div = document.createElement('div');
+                    div.className = 'mermaid';
+                    div.textContent = codeBlock.textContent;
+                    pre.parentNode.replaceChild(div, pre);
+                });
+                mermaid.initialize({startOnLoad:true});
+            </script>
+            """
+            
             full_html = (
                 f"<html><head>"
                 f"<style>{custom_css}</style>"
                 f'<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>'
                 f"</head><body>{html_content}"
-                f"<script>mermaid.initialize({{startOnLoad:true}});</script>"
+                f"{mermaid_script}"
                 f"</body></html>"
             )
 
