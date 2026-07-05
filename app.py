@@ -1031,77 +1031,65 @@ def main():
 
     # ── Local Chat Tab ──
     chat_tab = input_tabs.add("Local Chat")
-    chat_tab.grid_columnconfigure(0, weight=1)
-    chat_tab.grid_rowconfigure(2, weight=1)
+    chat_tab.grid_columnconfigure(1, weight=1)
+    chat_tab.grid_rowconfigure(3, weight=1)
     
     ctk.CTkLabel(
-        chat_tab, text="Chat with your generated notes using Local Ollama.",
+        chat_tab, text="Chat with all generated notes in a folder using Ollama.",
         font=("Segoe UI", 10), text_color="#a1a1aa"
-    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=5, pady=(5, 8))
+    ).grid(row=0, column=0, columnspan=3, sticky="w", padx=5, pady=(5, 8))
     
-    chat_file_var = tk.StringVar(value="")
-    chat_file_dropdown = ctk.CTkOptionMenu(
-        chat_tab, variable=chat_file_var, values=["Select a .md file..."], font=("Segoe UI", 11)
+    chat_folder_var = tk.StringVar(value="")
+    
+    def browse_chat_folder():
+        d = filedialog.askdirectory(title="Select Generated Notes Folder")
+        if d:
+            chat_folder_var.set(d)
+            
+    ctk.CTkButton(
+        chat_tab, text="Browse Folder", width=100, font=("Segoe UI", 10, "bold"),
+        command=browse_chat_folder
+    ).grid(row=1, column=0, sticky="w", padx=(5, 5), pady=4)
+    
+    ctk.CTkEntry(
+        chat_tab, textvariable=chat_folder_var, font=("Segoe UI", 10),
+        placeholder_text="Select folder with .md notes..."
+    ).grid(row=1, column=1, sticky="we", padx=5, pady=4)
+    
+    chat_model_var = tk.StringVar(value="llama3")
+    chat_model_dropdown = ctk.CTkOptionMenu(
+        chat_tab, variable=chat_model_var, values=["llama3", "phi3", "mistral", "gemma"], width=100, font=("Segoe UI", 11)
     )
-    chat_file_dropdown.grid(row=1, column=0, columnspan=2, sticky="we", padx=5, pady=4)
-    
-    def update_chat_dropdown(*args):
-        out_dir = output_dir_var.get().strip()
-        if out_dir and os.path.isdir(out_dir):
-            try:
-                md_files = [f for f in os.listdir(out_dir) if f.endswith(".md")]
-                if md_files:
-                    chat_file_dropdown.configure(values=md_files)
-                    if chat_file_var.get() not in md_files:
-                        chat_file_var.set(md_files[0])
-                else:
-                    chat_file_dropdown.configure(values=["No .md files found"])
-                    chat_file_var.set("No .md files found")
-            except Exception:
-                pass
-    
-    output_dir_var.trace_add("write", update_chat_dropdown)
+    chat_model_dropdown.grid(row=1, column=2, sticky="e", padx=(5, 5), pady=4)
     
     chat_log = ctk.CTkTextbox(
         chat_tab, height=80, state="disabled", wrap="word", font=("Segoe UI", 11)
     )
-    chat_log.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=4)
+    chat_log.grid(row=3, column=0, columnspan=3, sticky="nsew", padx=5, pady=4)
     
     chat_input = ctk.CTkEntry(
         chat_tab, font=("Segoe UI", 11), placeholder_text="Ask a question..."
     )
-    chat_input.grid(row=3, column=0, sticky="we", padx=(5, 5), pady=4)
+    chat_input.grid(row=4, column=0, columnspan=2, sticky="we", padx=(5, 5), pady=4)
     
-    chat_history = []
+    chat_state = {"session": None}
     
-    def on_chat_file_change(*args):
-        chat_history.clear()
+    def clear_chat(*args):
+        chat_state["session"] = None
         chat_log.configure(state="normal")
         chat_log.delete("1.0", "end")
         chat_log.configure(state="disabled")
+        
+    chat_folder_var.trace_add("write", clear_chat)
+    chat_model_var.trace_add("write", clear_chat)
 
-    chat_file_var.trace_add("write", on_chat_file_change)
-    
     def send_chat_message(*args):
         user_msg = chat_input.get().strip()
         if not user_msg: return
         
-        md_file = chat_file_var.get()
-        out_dir = output_dir_var.get().strip()
-        if not md_file or md_file == "Select a .md file..." or md_file == "No .md files found":
-            messagebox.showerror("Error", "Please select a valid markdown file.", parent=root)
-            return
-            
-        file_path = os.path.join(out_dir, md_file)
-        if not os.path.exists(file_path):
-            messagebox.showerror("Error", "Selected file not found.", parent=root)
-            return
-            
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                md_content = f.read()
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to read file: {str(e)}", parent=root)
+        folder = chat_folder_var.get().strip()
+        if not folder or not os.path.isdir(folder):
+            messagebox.showerror("Error", "Please select a valid folder.", parent=root)
             return
             
         chat_input.delete(0, 'end')
@@ -1110,17 +1098,17 @@ def main():
         chat_log.see('end')
         chat_log.configure(state="disabled")
         
-        # Disable UI during inference
         chat_btn.configure(state="disabled")
         chat_input.configure(state="disabled")
+        clear_btn.configure(state="disabled")
         
         def run_chat():
-            from src.chat import LocalChatClient
-            client = LocalChatClient()
+            from src.chat import ChatSession
             try:
-                response = client.chat(md_content, user_msg, chat_history)
-                chat_history.append({"role": "user", "content": user_msg})
-                chat_history.append({"role": "assistant", "content": response})
+                if chat_state["session"] is None or chat_state["session"].folder_path != folder or chat_state["session"].model_name != chat_model_var.get():
+                    chat_state["session"] = ChatSession(folder, chat_model_var.get())
+                
+                response = chat_state["session"].chat(user_msg)
                 
                 def update_ui():
                     chat_log.configure(state="normal")
@@ -1129,6 +1117,7 @@ def main():
                     chat_log.configure(state="disabled")
                     chat_btn.configure(state="normal")
                     chat_input.configure(state="normal")
+                    clear_btn.configure(state="normal")
                 
                 root.after(0, update_ui)
             except Exception as e:
@@ -1139,15 +1128,26 @@ def main():
                     chat_log.configure(state="disabled")
                     chat_btn.configure(state="normal")
                     chat_input.configure(state="normal")
+                    clear_btn.configure(state="normal")
                 root.after(0, show_err)
                 
         threading.Thread(target=run_chat, daemon=True).start()
+        
+    btn_frame = ctk.CTkFrame(chat_tab, fg_color="transparent")
+    btn_frame.grid(row=4, column=2, sticky="e", padx=(0, 5), pady=4)
     
+    clear_btn = ctk.CTkButton(
+        btn_frame, text="Clear Chat", width=60, fg_color="#ef4444", hover_color="#dc2626",
+        font=("Segoe UI", 11, "bold"), command=clear_chat
+    )
+    clear_btn.pack(side="left", padx=(0, 5))
+
     chat_btn = ctk.CTkButton(
-        chat_tab, text="Send", width=60,
+        btn_frame, text="Send", width=60,
         font=("Segoe UI", 11, "bold"), command=send_chat_message
     )
-    chat_btn.grid(row=3, column=1, sticky="e", padx=(0, 5), pady=4)
+    chat_btn.pack(side="left")
+    
     chat_input.bind("<Return>", send_chat_message)
 
     input_tabs.set("YouTube URL")  # Default to YouTube tab

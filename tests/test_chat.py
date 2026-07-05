@@ -1,45 +1,51 @@
 import pytest
+import os
+import tempfile
 from unittest.mock import patch, MagicMock
-import urllib.error
-import json
-from src.chat import LocalChatClient
+from src.chat import ChatSession
 
-def test_local_chat_success():
-    client = LocalChatClient(model_name="test-model")
-    mock_response = MagicMock()
-    mock_response.read.return_value = json.dumps({
-        "message": {"content": "This is a test response."}
-    }).encode("utf-8")
-    
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_urlopen.return_value.__enter__.return_value = mock_response
-        response = client.chat(
-            context_markdown="These are notes.",
-            user_message="What are the notes about?"
-        )
-        assert response == "This is a test response."
+def test_chat_session_loads_folder_context():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create dummy md files
+        with open(os.path.join(tmpdir, "note1.md"), "w", encoding="utf-8") as f:
+            f.write("Content of note 1")
+        with open(os.path.join(tmpdir, "note2.md"), "w", encoding="utf-8") as f:
+            f.write("Content of note 2")
+            
+        session = ChatSession(tmpdir, "llama3")
+        context = session._get_combined_context()
         
-        # Verify the payload structure
-        args, kwargs = mock_urlopen.call_args
-        request_obj = args[0]
-        assert request_obj.method == "POST"
-        payload = json.loads(request_obj.data.decode("utf-8"))
-        assert payload["model"] == "test-model"
-        assert len(payload["messages"]) == 2
-        assert payload["messages"][0]["role"] == "system"
-        assert "These are notes." in payload["messages"][0]["content"]
-        assert payload["messages"][1]["role"] == "user"
-        assert payload["messages"][1]["content"] == "What are the notes about?"
+        assert "note1.md" in context
+        assert "Content of note 1" in context
+        assert "note2.md" in context
+        assert "Content of note 2" in context
 
-def test_local_chat_connection_error():
-    client = LocalChatClient()
+@patch("src.chat.call_ollama_chat")
+def test_chat_session_history_and_clear(mock_call_ollama):
+    mock_call_ollama.return_value = "Mocked AI Response"
     
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_error = urllib.error.URLError(ConnectionRefusedError("Connection refused"))
-        mock_urlopen.side_effect = mock_error
+    with tempfile.TemporaryDirectory() as tmpdir:
+        session = ChatSession(tmpdir, "llama3")
         
-        with pytest.raises(ConnectionError, match="Please start Ollama to use Chat."):
-            client.chat(
-                context_markdown="Notes",
-                user_message="Hello"
-            )
+        # Initial chat
+        response1 = session.chat("Hello")
+        assert response1 == "Mocked AI Response"
+        assert len(session.chat_history) == 2
+        assert session.chat_history[0] == {"role": "user", "content": "Hello"}
+        assert session.chat_history[1] == {"role": "assistant", "content": "Mocked AI Response"}
+        
+        # Second chat
+        response2 = session.chat("How are you?")
+        assert len(session.chat_history) == 4
+        
+        # Verify history passed to LLM
+        args, _ = mock_call_ollama.call_args
+        messages = args[0]
+        # System prompt + 4 history messages (2 from before, + user msg added inside chat())
+        assert len(messages) == 4  # Wait, in the second call: 1 system, 2 history, 1 new user message = 4
+        assert messages[-1]["role"] == "user"
+        assert messages[-1]["content"] == "How are you?"
+        
+        # Test clear history
+        session.clear_history()
+        assert len(session.chat_history) == 0

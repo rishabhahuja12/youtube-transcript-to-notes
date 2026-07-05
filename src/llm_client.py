@@ -300,3 +300,32 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     except Exception as e:
         raise ConnectionError(f"Connection failure: {str(e)}") from e
 
+
+def call_ollama_chat(messages: list, model: str) -> str:
+    """Make raw POST HTTP call to local Ollama chat endpoint."""
+    url = "http://localhost:11434/api/chat"
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            return res_data.get("message", {}).get("content", "")
+    except urllib.error.URLError as e:
+        is_refused = isinstance(e.reason, ConnectionRefusedError)
+        has_refused_str = hasattr(e.reason, 'strerror') and 'refused' in str(e.reason).lower()
+        if is_refused or has_refused_str:
+            raise ConnectionError("Please start Ollama to use Chat.") from e
+        raise ConnectionError(f"Failed to connect to Ollama: {str(e.reason)}") from e
+    except Exception as e:
+        raise ConnectionError(f"An error occurred while communicating with Ollama: {str(e)}") from e
