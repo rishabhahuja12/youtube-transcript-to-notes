@@ -267,6 +267,10 @@ def _show_env_help_popup(root):
             messagebox.showerror("Error", "Endpoint and Model Name are required.", parent=help_win)
             return
 
+        if not k and "Ollama" not in p:
+            messagebox.showerror("Error", "API Key is required for remote providers.", parent=help_win)
+            return
+
         configs.append(ProviderConfig(provider=p, endpoint_url=e, api_key=k, model_name=m))
         refresh_pool_display()
         
@@ -697,6 +701,7 @@ def main():
             root.after(0, _update)
 
         def process():
+            log_message(f"Loaded {pool.total} API config(s) from keyring.")
             result = None
             try:
                 if active == "YouTube URL":

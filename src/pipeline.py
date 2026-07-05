@@ -69,7 +69,6 @@ def run_pipeline(
 
     try:
         on_log("=== PIPELINE STARTED ===")
-        on_log(f"Loaded {pool.total} API config(s). Current: {pool.current_label()}")
 
         # ------------------------------------------------------------------
         # Step 1: Read and parse chapters from outline
@@ -144,7 +143,6 @@ def run_pipeline_from_data(
     """
     try:
         on_log("=== PIPELINE STARTED ===")
-        on_log(f"Loaded {pool.total} API config(s). Current: {pool.current_label()}")
 
         for c in chapters:
             c["time_sec"] = parse_time_str(c["time"])
@@ -306,7 +304,7 @@ def _run_llm_pipeline(
                 except Exception as e:
                     if attempt < max_retries - 1:
                         # Try to rotate key first on error
-                        if "429" in str(e) or "rate" in str(e).lower() or pool.total > 1:
+                        if "429" in str(e) or "rate" in str(e).lower():
                             if pool.rotate():
                                 on_log(
                                     f"Rate limit hit. Switching to {pool.current_label()} "
@@ -519,7 +517,7 @@ def _run_llm_pipeline(
             except Exception as e:
                 if attempt < max_retries - 1:
                     # Try to rotate key first on error
-                    if "429" in str(e) or "rate" in str(e).lower() or pool.total > 1:
+                    if "429" in str(e) or "rate" in str(e).lower():
                         if pool.rotate():
                             on_log(
                                 f"Rate limit hit. Switching to {pool.current_label()} "

@@ -136,13 +136,18 @@ def get_provider_pool() -> str:
 def get_provider_pool_or_legacy() -> "ProviderPool":
     """Try loading the pool first. If empty, fall back to legacy single-config.
     Returns ProviderPool."""
+    import os
     from src.provider_pool import ProviderPool
+    from src.config import get_llm_config
+    
     pool_json = get_provider_pool()
     if pool_json:
         pool = ProviderPool.from_json(pool_json)
         if pool.total > 0:
             return pool
     
-    # Fallback to legacy
-    prov, ep, key, mod = get_llm_config_from_keyring()
+    # Fallback to legacy (keyring then .env via get_llm_config)
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_path = os.path.join(script_dir, ".env")
+    prov, ep, key, mod = get_llm_config(env_path)
     return ProviderPool.from_legacy(prov, ep, key, mod)
