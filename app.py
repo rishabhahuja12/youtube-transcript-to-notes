@@ -295,6 +295,41 @@ def install_pdf_library(log_fn, root):
     threading.Thread(target=run_install, daemon=True).start()
 
 
+def _is_playwright_ready() -> bool:
+    """Check if Playwright and Chromium browser are installed and ready."""
+    try:
+        venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
+        if os.path.exists(venv_site) and venv_site not in sys.path:
+            sys.path.append(venv_site)
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            path = p.chromium.executable_path
+            return os.path.exists(path)
+    except Exception:
+        return False
+
+
+def _ensure_playwright_ready(log_fn, root) -> bool:
+    """Check if Playwright is ready. If not, offer to auto-install.
+    Returns True if ready, False if user declined or install failed."""
+    if _is_playwright_ready():
+        return True
+    
+    answer = messagebox.askyesno(
+        "PDF Engine Not Installed",
+        "The PDF engine (Playwright + Chromium) is not installed yet.\n\n"
+        "Would you like to install it now? This is a one-time setup\n"
+        "that downloads a small headless browser (~150MB).",
+        parent=root,
+    )
+    if not answer:
+        return False
+    
+    log_fn("Auto-installing Playwright PDF engine...")
+    install_pdf_library(log_fn, root)
+    return False  # Not ready yet — install is async, user should retry after
+
+
 def _get_shared_pdf_css(theme="Textbook"):
     """Return the custom CSS used for both preview and export."""
     base_css = """
@@ -349,6 +384,9 @@ def _get_shared_pdf_css(theme="Textbook"):
 
 def convert_and_save_pdf(log_fn, root, theme="Textbook"):
     """Let the user pick a Markdown file and export it as PDF."""
+    if not _ensure_playwright_ready(log_fn, root):
+        return
+
     md_file = filedialog.askopenfilename(
         title="Select Markdown File to Convert",
         filetypes=[("Markdown Files", "*.md"), ("All Files", "*.*")],
@@ -409,6 +447,9 @@ def preview_pdf(log_fn, root, theme="Textbook"):
     """Render the PDF to a temporary file and open it for preview."""
     import tempfile
     
+    if not _ensure_playwright_ready(log_fn, root):
+        return
+
     md_file = filedialog.askopenfilename(
         title="Select Markdown File to Preview",
         filetypes=[("Markdown Files", "*.md"), ("All Files", "*.*")],
@@ -841,6 +882,14 @@ def main():
         command=lambda: convert_and_save_pdf(log_message, root, theme=pdf_theme_var.get())
     ).grid(row=0, column=1, sticky="we", padx=(5, 0))
 
+    # Add quick install helper link/button directly under PDF buttons
+    ctk.CTkButton(
+        pdf_tab, text="Click here to Install/Verify PDF Engine (Playwright Chromium)",
+        font=("Segoe UI", 9, "underline"), fg_color="transparent", hover_color="#27272a",
+        text_color="#a1a1aa", height=20,
+        command=lambda: install_pdf_library(log_message, root)
+    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=5, pady=(10, 0))
+
     input_tabs.set("YouTube URL")  # Default to YouTube tab
 
     # Actions card
@@ -870,6 +919,12 @@ def main():
         font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b", height=35,
         command=lambda: _show_env_help_popup(root)
     ).pack(fill="x", pady=(5, 5))
+
+    ctk.CTkButton(
+        actions_inner, text="🛠️ Install PDF Engine",
+        font=("Segoe UI", 11, "bold"), fg_color="#3f3f46", hover_color="#52525b", height=35,
+        command=lambda: install_pdf_library(log_message, root)
+    ).pack(fill="x", pady=(0, 5))
 
     open_output_btn = ctk.CTkButton(
         actions_inner, text="Open Output Folder",
