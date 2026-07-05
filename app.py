@@ -252,6 +252,8 @@ def install_pdf_library(log_fn, root):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 shell=False,
             )
             for line in process1.stdout:
@@ -269,6 +271,8 @@ def install_pdf_library(log_fn, root):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 shell=False,
             )
             for line in process2.stdout:
