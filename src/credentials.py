@@ -13,6 +13,7 @@ KEY_API_KEY = "api_key"
 KEY_ENDPOINT_URL = "endpoint_url"
 KEY_MODEL_NAME = "model_name"
 KEY_PROVIDER = "provider"
+KEY_PROVIDER_POOL = "provider_pool"
 
 
 def _get_keyring():
@@ -120,3 +121,28 @@ def get_llm_config_from_keyring() -> tuple:
         creds["api_key"],
         creds["model_name"],
     )
+
+
+def store_provider_pool(pool_json: str) -> bool:
+    """Store the serialized pool JSON in keyring."""
+    return store_credential(KEY_PROVIDER_POOL, pool_json)
+
+
+def get_provider_pool() -> str:
+    """Retrieve the pool JSON from keyring."""
+    return get_credential(KEY_PROVIDER_POOL)
+
+
+def get_provider_pool_or_legacy() -> "ProviderPool":
+    """Try loading the pool first. If empty, fall back to legacy single-config.
+    Returns ProviderPool."""
+    from src.provider_pool import ProviderPool
+    pool_json = get_provider_pool()
+    if pool_json:
+        pool = ProviderPool.from_json(pool_json)
+        if pool.total > 0:
+            return pool
+    
+    # Fallback to legacy
+    prov, ep, key, mod = get_llm_config_from_keyring()
+    return ProviderPool.from_legacy(prov, ep, key, mod)

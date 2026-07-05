@@ -25,16 +25,14 @@ from src.llm_client import (
     estimate_pipeline_time,
     get_rate_limit_info,
 )
+from src.provider_pool import ProviderPool
 
 
 def run_pipeline(
     transcript_path: str,
     timestamps_path: str,
     output_dir: str,
-    provider: str,
-    endpoint_url: str,
-    api_key: str,
-    model_name: str,
+    pool: ProviderPool,
     cancel_event: threading.Event,
     on_log: callable,
     on_progress: callable,
@@ -50,14 +48,8 @@ def run_pipeline(
         Path to the chapter-timestamps / outline file.
     output_dir : str
         Directory where output Markdown files are written.
-    provider : str
-        LLM provider name (e.g. ``"Ollama"``, ``"OpenAI"``).
-    endpoint_url : str
-        LLM API endpoint URL.
-    api_key : str
-        API key (may be empty for local providers).
-    model_name : str
-        Model identifier to use for generation.
+    pool : ProviderPool
+        Pool of LLM API configurations.
     cancel_event : threading.Event
         Set this event to request graceful cancellation.
     on_log : callable
@@ -77,7 +69,7 @@ def run_pipeline(
 
     try:
         on_log("=== PIPELINE STARTED ===")
-        on_log(f"Active LLM: {provider} / {model_name} @ {endpoint_url}")
+        on_log(f"Loaded {pool.total} API config(s). Current: {pool.current_label()}")
 
         # ------------------------------------------------------------------
         # Step 1: Read and parse chapters from outline
@@ -122,8 +114,7 @@ def run_pipeline(
         chapter_texts = assign_chapters(merged, chapters)
 
         return _run_llm_pipeline(
-            chapters, chapter_texts, output_dir, provider, endpoint_url,
-            api_key, model_name, cancel_event, on_log, on_progress,
+            chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
             video_title=video_title,
         )
 
@@ -136,11 +127,8 @@ def run_pipeline_from_data(
     transcript_blocks: list,
     chapters: list,
     output_dir: str,
-    provider: str,
-    endpoint_url: str,
-    api_key: str,
-    model_name: str,
-    cancel_event,
+    pool: ProviderPool,
+    cancel_event: threading.Event,
     on_log: callable,
     on_progress: callable,
     video_title: str = None,
@@ -156,7 +144,7 @@ def run_pipeline_from_data(
     """
     try:
         on_log("=== PIPELINE STARTED ===")
-        on_log(f"Active LLM: {provider} / {model_name} @ {endpoint_url}")
+        on_log(f"Loaded {pool.total} API config(s). Current: {pool.current_label()}")
 
         for c in chapters:
             c["time_sec"] = parse_time_str(c["time"])
@@ -170,8 +158,7 @@ def run_pipeline_from_data(
         chapter_texts = assign_chapters(merged, chapters)
 
         return _run_llm_pipeline(
-            chapters, chapter_texts, output_dir, provider, endpoint_url,
-            api_key, model_name, cancel_event, on_log, on_progress,
+            chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
             video_title=video_title,
         )
 
@@ -181,8 +168,13 @@ def run_pipeline_from_data(
 
 
 def _run_llm_pipeline(
-    chapters, chapter_texts, output_dir, provider, endpoint_url,
-    api_key, model_name, cancel_event, on_log, on_progress,
+    chapters: list,
+    chapter_texts: list,
+    output_dir: str,
+    pool: ProviderPool,
+    cancel_event: threading.Event,
+    on_log: callable,
+    on_progress: callable,
     video_title: str = None,
 ):
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
@@ -192,16 +184,19 @@ def _run_llm_pipeline(
 
     try:
         # --- Pre-flight estimation ---
-        total_words = sum(len(" ".join(chapter_texts[i]).split()) for i in range(len(chapters)))
-        estimate = estimate_pipeline_time(total_words, len(chapters), provider)
-        on_log(f"Rate limits: {get_rate_limit_info(provider)}")
+        total_words = sum(
+            len(" ".join(chapter_texts[i]).split()) for i in range(len(chapters))
+        )
+        estimate = estimate_pipeline_time(total_words, len(chapters), pool.current.provider)
+        on_log(f"Rate limits: {get_rate_limit_info(pool.current.provider)}")
         on_log(estimate["info"])
 
         # --- Create rate limiter ---
-        limiter = AdaptiveRateLimiter.for_provider(provider)
+        limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
 
         # --- Load checkpoint if exists ---
-        checkpoint_signature = hashlib.md5(json.dumps(chapters, sort_keys=True).encode("utf-8")).hexdigest()
+        dump_str = json.dumps(chapters, sort_keys=True).encode("utf-8")
+        checkpoint_signature = hashlib.md5(dump_str).hexdigest()
         completed_notes = {}
         if os.path.exists(checkpoint_path):
             try:
@@ -210,7 +205,10 @@ def _run_llm_pipeline(
                 if checkpoint.get("signature") == checkpoint_signature:
                     completed_notes = checkpoint.get("completed_notes", {})
                     if completed_notes:
-                        on_log(f"✅ Resuming from checkpoint: {len(completed_notes)}/{len(chapters)} chapters already done.")
+                        on_log(
+                            f"✅ Resuming from checkpoint: {len(completed_notes)}/"
+                            f"{len(chapters)} chapters already done."
+                        )
                 else:
                     on_log("Checkpoint signature mismatch, starting fresh.")
             except Exception:
@@ -236,7 +234,10 @@ def _run_llm_pipeline(
 
             # Check checkpoint — skip if already done
             if str(idx) in completed_notes:
-                on_log(f"Chapter {idx + 1}/{total_chapters}: '{title}' — already done (checkpoint), skipping.")
+                on_log(
+                    f"Chapter {idx + 1}/{total_chapters}: '{title}' "
+                    f"— already done (checkpoint), skipping."
+                )
                 detailed_notes_sections.append(completed_notes[str(idx)])
                 on_progress(idx + 1, total_chapters)
                 continue
@@ -285,10 +286,10 @@ def _run_llm_pipeline(
 
                 try:
                     response = call_llm(
-                        provider=provider,
-                        endpoint_url=endpoint_url,
-                        api_key=api_key,
-                        model_name=model_name,
+                        provider=pool.current.provider,
+                        endpoint_url=pool.current.endpoint_url,
+                        api_key=pool.current.api_key,
+                        model_name=pool.current.model_name,
                         system_prompt=(
                             "You are an expert technical note-writer and instructional "
                             "designer. Your task is to write highly detailed, clear, and "
@@ -304,6 +305,16 @@ def _run_llm_pipeline(
                     break  # Success!
                 except Exception as e:
                     if attempt < max_retries - 1:
+                        # Try to rotate key first on error
+                        if "429" in str(e) or "rate" in str(e).lower() or pool.total > 1:
+                            if pool.rotate():
+                                on_log(
+                                    f"Rate limit hit. Switching to {pool.current_label()} "
+                                    f"immediately..."
+                                )
+                                limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+                                continue # retry immediately without sleep
+
                         err_str = str(e)
                         # Try to parse exact retry delay from Gemini's error
                         match = re.search(r"Please retry in ([\d\.]+)s", err_str)
@@ -314,15 +325,14 @@ def _run_llm_pipeline(
                                 pass
                                 
                         on_log(
-                            f"API Error (Attempt {attempt + 1}/{max_retries}): {e}"
-                        )
-                        on_log(
-                            f"Cooling down for {retry_delay:.1f} seconds..."
+                            f"All API configs exhausted. Cooling down for {retry_delay:.1f}s..."
                         )
                         # Interruptible cooldown
                         if cancel_event.wait(retry_delay):
                             pipeline_cancelled = True
                             break
+                        pool.reset_cycle()
+                        limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
                         retry_delay *= 2  # Exponential backoff (for the next attempt, if any)
                     else:
                         on_log(
@@ -351,7 +361,10 @@ def _run_llm_pipeline(
             # Save checkpoint after each chapter
             try:
                 with open(checkpoint_path, "w", encoding="utf-8") as f:
-                    json.dump({"signature": checkpoint_signature, "completed_notes": completed_notes}, f)
+                    json.dump({
+                        "signature": checkpoint_signature, 
+                        "completed_notes": completed_notes
+                    }, f)
             except Exception:
                 pass
 
@@ -491,10 +504,10 @@ def _run_llm_pipeline(
 
             try:
                 practical_summary = call_llm(
-                    provider=provider,
-                    endpoint_url=endpoint_url,
-                    api_key=api_key,
-                    model_name=model_name,
+                    provider=pool.current.provider,
+                    endpoint_url=pool.current.endpoint_url,
+                    api_key=pool.current.api_key,
+                    model_name=pool.current.model_name,
                     system_prompt=system_prompt_summary,
                     user_prompt=user_prompt_summary,
                 )
@@ -505,6 +518,16 @@ def _run_llm_pipeline(
                 break  # Success!
             except Exception as e:
                 if attempt < max_retries - 1:
+                    # Try to rotate key first on error
+                    if "429" in str(e) or "rate" in str(e).lower() or pool.total > 1:
+                        if pool.rotate():
+                            on_log(
+                                f"Rate limit hit. Switching to {pool.current_label()} "
+                                f"immediately..."
+                            )
+                            limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
+                            continue # retry immediately without sleep
+
                     err_str = str(e)
                     # Try to parse exact retry delay from Gemini's error
                     match = re.search(r"Please retry in ([\d\.]+)s", err_str)
@@ -515,15 +538,14 @@ def _run_llm_pipeline(
                             pass
                             
                     on_log(
-                        f"API Error during summary generation (Attempt {attempt + 1}/{max_retries}): {e}"
-                    )
-                    on_log(
-                        f"Cooling down for {retry_delay:.1f} seconds..."
+                        f"All API configs exhausted. Cooling down for {retry_delay:.1f}s..."
                     )
                     # Interruptible cooldown
                     if cancel_event.wait(retry_delay):
                         pipeline_cancelled = True
                         break
+                    pool.reset_cycle()
+                    limiter = AdaptiveRateLimiter.for_provider(pool.current.provider)
                     retry_delay *= 2  # Exponential backoff
                 else:
                     on_log(

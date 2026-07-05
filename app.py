@@ -60,7 +60,12 @@ def load_config(transcript_var, timestamps_var, output_var):
             pass
 
 
-def load_recent_outputs():
+def load_recent_outputs() -> list[str]:
+    """Load the list of recently used output directories from config.json.
+    
+    Returns:
+        list[str]: A list of recent directory paths.
+    """
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -68,8 +73,14 @@ def load_recent_outputs():
     except Exception:
         return []
 
-def add_recent_output(path):
-    if not path or not os.path.isdir(path): return
+def add_recent_output(path: str) -> None:
+    """Add a new output directory path to the recent list in config.json.
+    
+    Args:
+        path (str): The directory path to add.
+    """
+    if not path or not os.path.isdir(path):
+        return
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -124,36 +135,70 @@ def check_env_and_show_help(root):
 
 def _show_env_help_popup(root):
     """Display an interactive dialog for secure API credential setup."""
-    from src.credentials import store_all_credentials, get_all_credentials
-    
+    from src.credentials import store_provider_pool, get_provider_pool_or_legacy
+    from src.provider_pool import ProviderConfig, ProviderPool
+
     help_win = ctk.CTkToplevel(root)
     help_win.title("API Configuration Setup")
-    help_win.geometry("500x550")
+    help_win.geometry("600x650")
     help_win.resizable(False, False)
     help_win.transient(root)
     help_win.grab_set()
+    help_win.attributes("-topmost", True)
 
     ctk.CTkLabel(
-        help_win, text="Welcome! Let's set up your LLM provider.",
+        help_win, text="🔑 API Configuration Pool",
         font=("Segoe UI", 16, "bold"), text_color="#3b82f6"
     ).pack(pady=(20, 5), padx=20, anchor="w")
 
+    pool = get_provider_pool_or_legacy()
+    configs = pool.configs.copy()
+
+    # Top Section: Pool Display
+    pool_frame = ctk.CTkScrollableFrame(help_win, height=150)
+    pool_frame.pack(fill="x", padx=20, pady=(0, 20))
+
+    def refresh_pool_display():
+        for widget in pool_frame.winfo_children():
+            widget.destroy()
+        
+        for idx, config in enumerate(configs):
+            row = ctk.CTkFrame(pool_frame, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            
+            k = config.api_key
+            masked_key = (k[:8] + "...") if len(k) > 8 else ("*" * len(k)) if k else ""
+            lbl_text = f"#{idx+1} {config.provider} | {config.model_name} | {masked_key}"
+            
+            ctk.CTkLabel(row, text=lbl_text, font=("Segoe UI", 12)).pack(side="left", padx=5)
+            
+            def remove_item(i=idx):
+                configs.pop(i)
+                refresh_pool_display()
+                
+            btn = ctk.CTkButton(
+                row, text="Remove", width=60, height=24, fg_color="#ef4444",
+                hover_color="#dc2626", command=remove_item
+            )
+            btn.pack(side="right", padx=5)
+
+    refresh_pool_display()
+
     ctk.CTkLabel(
-        help_win,
-        text="This app needs an LLM endpoint to generate notes.\n"
-             "Your credentials will be securely stored in the Windows\n"
-             "Credential Manager.",
-        font=("Segoe UI", 11), text_color="#a1a1aa", justify="left"
-    ).pack(padx=20, anchor="w", pady=(0, 20))
+        help_win, text="── Add New Configuration ──",
+        font=("Segoe UI", 14, "bold")
+    ).pack(pady=(10, 10), padx=20, anchor="w")
 
     form_frame = ctk.CTkFrame(help_win, fg_color="transparent")
     form_frame.pack(fill="x", padx=20)
 
     # Variables
-    provider_var = tk.StringVar(value="Groq")
-    endpoint_var = tk.StringVar(value="https://api.groq.com/openai/v1/chat/completions")
+    provider_var = tk.StringVar(value="Gemini")
+    endpoint_var = tk.StringVar(
+        value="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    )
     api_key_var = tk.StringVar()
-    model_var = tk.StringVar(value="llama-3.3-70b-versatile")
+    model_var = tk.StringVar(value="gemini-1.5-flash")
 
     def on_provider_change(*args):
         prov = provider_var.get()
@@ -170,39 +215,49 @@ def _show_env_help_popup(root):
             endpoint_var.set("http://localhost:11434")
             model_var.set("llama3")
             api_key_var.set("")
-
-    # Load previously saved credentials (if any) BEFORE adding the trace
-    # so the trace doesn't fire and overwrite saved endpoint/model with defaults.
-    try:
-        saved = get_all_credentials()
-        if saved.get('provider'):
-            provider_var.set(saved['provider'])
-        if saved.get('endpoint_url'):
-            endpoint_var.set(saved['endpoint_url'])
-        if saved.get('api_key'):
-            api_key_var.set(saved['api_key'])
-        if saved.get('model_name'):
-            model_var.set(saved['model_name'])
-    except Exception:
-        pass  # Use defaults if keyring fails
+        elif prov == "Ollama (Local)":
+            endpoint_var.set("http://localhost:11434")
+            model_var.set("llama3")
+            api_key_var.set("")
+        elif prov == "Custom":
+            endpoint_var.set("")
+            model_var.set("")
+            api_key_var.set("")
 
     provider_var.trace_add("write", on_provider_change)
 
     # Form Fields
-    ctk.CTkLabel(form_frame, text="Provider:", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w", pady=8)
-    provider_dropdown = ctk.CTkOptionMenu(form_frame, variable=provider_var, values=["Groq", "OpenRouter", "Gemini", "Ollama", "Other"])
+    ctk.CTkLabel(form_frame, text="Provider:", font=("Segoe UI", 11, "bold")).grid(
+        row=0, column=0, sticky="w", pady=8
+    )
+    provider_dropdown = ctk.CTkOptionMenu(
+        form_frame, variable=provider_var, 
+        values=["Gemini", "Groq", "OpenRouter", "Ollama (Local)", "Custom"]
+    )
     provider_dropdown.grid(row=0, column=1, sticky="we", pady=8, padx=(10, 0))
 
-    ctk.CTkLabel(form_frame, text="Endpoint URL:", font=("Segoe UI", 11, "bold")).grid(row=1, column=0, sticky="w", pady=8)
-    ctk.CTkEntry(form_frame, textvariable=endpoint_var, width=300).grid(row=1, column=1, sticky="we", pady=8, padx=(10, 0))
+    ctk.CTkLabel(form_frame, text="Endpoint URL:", font=("Segoe UI", 11, "bold")).grid(
+        row=1, column=0, sticky="w", pady=8
+    )
+    ctk.CTkEntry(form_frame, textvariable=endpoint_var, width=300).grid(
+        row=1, column=1, sticky="we", pady=8, padx=(10, 0)
+    )
 
-    ctk.CTkLabel(form_frame, text="Model Name:", font=("Segoe UI", 11, "bold")).grid(row=2, column=0, sticky="w", pady=8)
-    ctk.CTkEntry(form_frame, textvariable=model_var, width=300).grid(row=2, column=1, sticky="we", pady=8, padx=(10, 0))
+    ctk.CTkLabel(form_frame, text="Model Name:", font=("Segoe UI", 11, "bold")).grid(
+        row=2, column=0, sticky="w", pady=8
+    )
+    ctk.CTkEntry(form_frame, textvariable=model_var, width=300).grid(
+        row=2, column=1, sticky="we", pady=8, padx=(10, 0)
+    )
 
-    ctk.CTkLabel(form_frame, text="API Key:", font=("Segoe UI", 11, "bold")).grid(row=3, column=0, sticky="w", pady=8)
-    ctk.CTkEntry(form_frame, textvariable=api_key_var, show="*", width=300).grid(row=3, column=1, sticky="we", pady=8, padx=(10, 0))
+    ctk.CTkLabel(form_frame, text="API Key:", font=("Segoe UI", 11, "bold")).grid(
+        row=3, column=0, sticky="w", pady=8
+    )
+    ctk.CTkEntry(form_frame, textvariable=api_key_var, width=300).grid(
+        row=3, column=1, sticky="we", pady=8, padx=(10, 0)
+    )
 
-    def save_and_close():
+    def add_to_pool():
         p = provider_var.get().strip()
         e = endpoint_var.get().strip()
         k = api_key_var.get().strip()
@@ -212,21 +267,32 @@ def _show_env_help_popup(root):
             messagebox.showerror("Error", "Endpoint and Model Name are required.", parent=help_win)
             return
 
-        success = store_all_credentials(p, e, k, m)
+        configs.append(ProviderConfig(provider=p, endpoint_url=e, api_key=k, model_name=m))
+        refresh_pool_display()
+        
+        # clear fields
+        api_key_var.set("")
+
+    ctk.CTkButton(
+        form_frame, text="+ Add to Pool", font=("Segoe UI", 12, "bold"),
+        fg_color="#3b82f6", hover_color="#2563eb",
+        command=add_to_pool
+    ).grid(row=4, column=1, sticky="e", pady=10)
+
+    def save_and_close():
+        new_pool = ProviderPool(configs)
+        success = store_provider_pool(new_pool.to_json())
         if success:
-            messagebox.showinfo("Success", "Credentials saved securely!", parent=help_win)
+            messagebox.showinfo("Success", "Pool saved securely!", parent=help_win)
             help_win.destroy()
-            
-            # Since config might have changed, restart is technically safest, but we can just let them click start.
-            root.after(0, lambda: messagebox.showinfo("Ready", "Configuration saved. You can now use the pipeline."))
         else:
             messagebox.showerror("Error", "Failed to save to system keyring.", parent=help_win)
 
     btn_frame = ctk.CTkFrame(help_win, fg_color="transparent")
-    btn_frame.pack(pady=30, padx=20, fill="x")
+    btn_frame.pack(pady=20, padx=20, fill="x")
 
     ctk.CTkButton(
-        btn_frame, text="Save Credentials", font=("Segoe UI", 13, "bold"),
+        btn_frame, text="Save Pool", font=("Segoe UI", 13, "bold"),
         fg_color="#10b981", hover_color="#059669", height=40,
         command=save_and_close
     ).pack(fill="x")
@@ -570,26 +636,20 @@ def main():
         output_dir = output_dir_var.get().strip()
         
         try:
-            from src.credentials import get_llm_config_from_keyring
-            provider, endpoint_url, api_key, model_name = get_llm_config_from_keyring()
-            if not endpoint_url or not model_name:
+            from src.credentials import get_provider_pool_or_legacy
+            pool = get_provider_pool_or_legacy()
+            if pool.total == 0:
                 raise ValueError("Incomplete credentials")
         except Exception:
             messagebox.showerror(
                 "Missing Credentials",
-                "No valid credentials found in the system keyring. Please configure them via API Setup / Credentials.",
+                "No API configurations found. Please add at least one in API Setup.",
                 parent=root,
             )
             _show_env_help_popup(root)
             return
         if not output_dir or not os.path.isdir(output_dir):
             messagebox.showerror("Validation Error", "Please provide a valid output directory.")
-            return
-        if not endpoint_url:
-            messagebox.showerror("Validation Error", "No ENDPOINT_URL found. Please configure it via API Setup.")
-            return
-        if not model_name:
-            messagebox.showerror("Validation Error", "No MODEL_NAME found. Please configure it via API Setup.")
             return
 
         if active == "YouTube URL":
@@ -661,10 +721,7 @@ def main():
                         transcript_blocks=data['transcript_blocks'],
                         chapters=data['chapters'],
                         output_dir=output_dir,
-                        provider=provider,
-                        endpoint_url=endpoint_url,
-                        api_key=api_key,
-                        model_name=model_name,
+                        pool=pool,
                         cancel_event=cancel_event,
                         on_log=log_message,
                         on_progress=on_progress,
@@ -675,10 +732,7 @@ def main():
                         transcript_path=transcript_path,
                         timestamps_path=timestamps_path,
                         output_dir=output_dir,
-                        provider=provider,
-                        endpoint_url=endpoint_url,
-                        api_key=api_key,
-                        model_name=model_name,
+                        pool=pool,
                         cancel_event=cancel_event,
                         on_log=log_message,
                         on_progress=on_progress,
