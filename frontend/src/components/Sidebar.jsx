@@ -3,20 +3,20 @@ import { LayoutDashboard, Settings, FileText, PlaySquare, Zap } from 'lucide-rea
 import { useAppContext } from '../context/AppContext';
 
 const Sidebar = () => {
-  const { activeTab, setActiveTab, ollamaStatus } = useAppContext();
+  const { currentScreen, setCurrentScreen, ollamaStatus } = useAppContext();
 
   const navItems = [
-    { id: 'process', label: 'Process Video', icon: PlaySquare },
-    { id: 'library', label: 'My Notes', icon: FileText },
+    { id: 'library', label: 'Library', icon: FileText },
+    { id: 'newPipeline', label: 'New Pipeline', icon: PlaySquare },
     { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'about', label: 'About', icon: LayoutDashboard },
+    { id: 'utilities', label: 'Utilities', icon: LayoutDashboard },
   ];
 
   return (
     <aside className="sidebar glass-panel">
       <div className="sidebar-header">
         <div className="brand">
-          <Zap size={24} color="hsl(var(--accent-primary))" />
+          <Zap size={24} color="var(--accent)" />
           <span>StudySuite AI</span>
         </div>
       </div>
@@ -27,8 +27,8 @@ const Sidebar = () => {
           return (
             <div 
               key={item.id}
-              className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(item.id)}
+              className={`nav-item ${currentScreen === item.id ? 'active' : ''}`}
+              onClick={() => setCurrentScreen(item.id)}
             >
               <Icon />
               <span>{item.label}</span>
