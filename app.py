@@ -638,6 +638,7 @@ def main():
     topic_title_var = tk.StringVar()
     pdf_theme_var = tk.StringVar(value="Textbook")
     multimodal_var = tk.BooleanVar(value=False)
+    kag_var = tk.BooleanVar(value=False)
 
     # ── Console log helper with file mirroring ──
     def log_message(msg):
@@ -782,6 +783,7 @@ def main():
                         video_title=data.get('metadata', {}).get('title'),
                         enable_multimodal=multimodal_var.get(),
                         youtube_url=url,
+                        enable_kag=kag_var.get(),
                     )
                 else:
                     result = run_pipeline(
@@ -793,6 +795,7 @@ def main():
                         on_log=log_message,
                         on_progress=on_progress,
                         video_title=topic_title_var.get().strip(),
+                        enable_kag=kag_var.get(),
                     )
                 
                 if result["success"]:
@@ -841,6 +844,12 @@ def main():
                         step_label.configure(text="Done.")
                         pdf_theme_menu.pack(fill="x", pady=(5, 0))
                         export_pdf_btn.pack(fill="x", pady=(5, 0))
+                        kag_path = result.get("kag_html_path")
+                        if kag_path and os.path.exists(kag_path):
+                            open_kag_btn.configure(
+                                command=lambda p=kag_path: _open_path(p)
+                            )
+                            open_kag_btn.pack(fill="x", pady=(5, 0))
                     else:
                         status_label.configure(text="Status: Error", text_color="#ef4444")
                         status_pill.configure(fg_color="#ef4444")
@@ -954,6 +963,11 @@ def main():
         variable=multimodal_var, font=("Segoe UI", 11)
     ).grid(row=5, column=0, columnspan=2, sticky="w", padx=5, pady=(10, 0))
 
+    ctk.CTkCheckBox(
+        yt_tab, text="Generate Knowledge Graph (KAG)",
+        variable=kag_var, font=("Segoe UI", 11)
+    ).grid(row=6, column=0, columnspan=2, sticky="w", padx=5, pady=(10, 0))
+
     # ── Manual Files Tab ──
     files_tab = input_tabs.add("Manual Files")
     files_tab.grid_columnconfigure(1, weight=1)
@@ -969,6 +983,11 @@ def main():
         ctk.CTkEntry(files_tab, textvariable=var, font=("Segoe UI", 10), placeholder_text=placeholder).grid(row=row_idx, column=1, sticky="we", pady=6, padx=5)
         if browse_fn:
             ctk.CTkButton(files_tab, text="Browse", width=80, font=("Segoe UI", 10, "bold"), command=browse_fn).grid(row=row_idx, column=2, sticky="e", pady=6, padx=(5, 5))
+
+    ctk.CTkCheckBox(
+        files_tab, text="Generate Knowledge Graph (KAG)",
+        variable=kag_var, font=("Segoe UI", 11)
+    ).grid(row=4, column=0, columnspan=3, sticky="w", padx=5, pady=(10, 0))
 
     # ── PDF Tools Tab ──
     pdf_tab = input_tabs.add("PDF Tools")
@@ -1100,6 +1119,11 @@ def main():
         actions_inner, text="Export to PDF",
         font=("Segoe UI", 11, "bold"), fg_color="#3b82f6", hover_color="#2563eb", height=35,
         command=lambda: convert_and_save_pdf(log_message, root, theme=pdf_theme_var.get())
+    )
+
+    open_kag_btn = ctk.CTkButton(
+        actions_inner, text="Open Knowledge Graph",
+        font=("Segoe UI", 11, "bold"), fg_color="#8b5cf6", hover_color="#7c3aed", height=35
     )
 
     start_btn = ctk.CTkButton(

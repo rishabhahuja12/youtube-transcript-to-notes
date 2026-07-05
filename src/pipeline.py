@@ -39,6 +39,7 @@ def run_pipeline(
     video_title: str = None,
     enable_multimodal: bool = False,
     youtube_url: str = None,
+    enable_kag: bool = False,
 ) -> dict:
     """Run the full notes-generation pipeline.
 
@@ -137,7 +138,7 @@ def run_pipeline(
 
         return _run_llm_pipeline(
             chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
-            video_title=video_title, chapter_frames=chapter_frames
+            video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
         )
 
     except Exception as e:
@@ -156,6 +157,7 @@ def run_pipeline_from_data(
     video_title: str = None,
     enable_multimodal: bool = False,
     youtube_url: str = None,
+    enable_kag: bool = False,
 ) -> dict:
     """Run the pipeline from pre-extracted data (e.g. YouTube URL extraction).
 
@@ -203,7 +205,7 @@ def run_pipeline_from_data(
 
         return _run_llm_pipeline(
             chapters, chapter_texts, output_dir, pool, cancel_event, on_log, on_progress,
-            video_title=video_title, chapter_frames=chapter_frames
+            video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
         )
 
     except Exception as e:
@@ -221,10 +223,12 @@ def _run_llm_pipeline(
     on_progress: callable,
     video_title: str = None,
     chapter_frames: dict = None,
+    enable_kag: bool = False,
 ):
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
     detailed_path = ""
     practical_path = ""
+    kag_html_path = ""
     checkpoint_path = os.path.join(output_dir, ".checkpoint.json")
 
     try:
@@ -628,6 +632,28 @@ def _run_llm_pipeline(
             f.write(practical_summary)
         on_log(f"Practical notes saved to: {practical_path}")
 
+        # ------------------------------------------------------------------
+        # Step 5: Generate Knowledge Graph
+        # ------------------------------------------------------------------
+        if enable_kag:
+            on_log("Step 5: Generating Knowledge Graph...")
+            try:
+                from src.knowledge_graph import extract_concepts, build_graph, render_html
+                on_log("Extracting concepts for Knowledge Graph...")
+                graph_data = extract_concepts(
+                    full_detailed_content, pool.current, on_log
+                )
+                kag_json_path = os.path.join(output_dir, f"{slug}_knowledge_graph.json")
+                kag_html_path = os.path.join(output_dir, f"{slug}_knowledge_graph.html")
+                with open(kag_json_path, "w", encoding="utf-8") as f:
+                    json.dump(graph_data, f, indent=2)
+                html_content = render_html(graph_data)
+                with open(kag_html_path, "w", encoding="utf-8") as f:
+                    f.write(html_content)
+                on_log(f"Knowledge Graph saved to: {kag_html_path}")
+            except Exception as e:
+                on_log(f"WARNING: Knowledge Graph generation failed: {e}. Skipping.")
+
         on_log("=== PIPELINE COMPLETED SUCCESSFULLY ===")
         # Clean up checkpoint file on success
         if os.path.exists(checkpoint_path):
@@ -639,6 +665,7 @@ def _run_llm_pipeline(
             "success": True,
             "detailed_path": detailed_path,
             "practical_path": practical_path,
+            "kag_html_path": kag_html_path,
             "error": None,
         }
 
@@ -648,6 +675,7 @@ def _run_llm_pipeline(
             "success": False,
             "detailed_path": detailed_path,
             "practical_path": practical_path,
+            "kag_html_path": kag_html_path,
             "error": str(e),
         }
 
