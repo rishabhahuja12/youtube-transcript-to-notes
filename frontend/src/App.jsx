@@ -25,36 +25,20 @@ const MainContent = () => {
   );
 };
 
-class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+import { ErrorBoundary } from 'react-error-boundary';
 
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: '2rem', color: 'red' }}>
-          <h2>Something went wrong.</h2>
-          <pre>{this.state.error.toString()}</pre>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
+function Fallback({ error }) {
+  return (
+    <div className="error-fallback">
+      <h2>Something went wrong.</h2>
+      <pre>{error.message}</pre>
+    </div>
+  );
 }
 
 function App() {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary FallbackComponent={Fallback}>
       <AppProvider>
         <div className="app-container">
           <Sidebar />

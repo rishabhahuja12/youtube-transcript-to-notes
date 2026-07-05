@@ -12,7 +12,8 @@
   "dependencies": {
     "lucide-react": "^1.23.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "react-error-boundary": "^6.1.2"
   },
   "devDependencies": {
     "@rolldown/binding-win32-x64-msvc": "^1.1.4",
