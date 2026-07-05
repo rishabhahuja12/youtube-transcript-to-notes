@@ -2,19 +2,25 @@ const API_BASE_URL = 'http://localhost:8000';
 const WS_BASE_URL = 'ws://localhost:8000';
 
 export const fetchLibrary = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/content/library`);
+  const response = await fetch(`${API_BASE_URL}/api/content/library`, {
+    signal: AbortSignal.timeout(30000)
+  });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
 
 export const fetchCourse = async (id) => {
-  const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/files`);
+  const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/files`, {
+    signal: AbortSignal.timeout(30000)
+  });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
 
 export const fetchNotes = async (id, file) => {
-  const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/notes/${file}`);
+  const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/notes/${file}`, {
+    signal: AbortSignal.timeout(30000)
+  });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.text();
 };
@@ -63,7 +69,9 @@ export const connectPipelineWebSocket = (onMessage) => {
 };
 
 export const fetchOllamaStatus = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/settings/health`);
+  const response = await fetch(`${API_BASE_URL}/api/settings/health`, {
+    signal: AbortSignal.timeout(30000)
+  });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
