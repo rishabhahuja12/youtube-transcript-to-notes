@@ -129,6 +129,28 @@ def add_recent_output(path: str) -> None:
         pass
 
 
+def get_powerup_time_hint(feature: str, video_duration_sec: int = 600) -> str:
+    """Calculate dynamic estimated time addition for power-up engines.
+
+    Args:
+        feature (str): Feature identifier ("vision", "kag", or "pdf").
+        video_duration_sec (int, optional): Video duration in seconds. Defaults to 600.
+
+    Returns:
+        str: Formatted time estimate hint string (e.g. "+ ~35s").
+    """
+    if feature == "vision":
+        est = max(15, int(35 * (video_duration_sec / 600)))
+        return f"+ ~{est}s"
+    elif feature == "kag":
+        est = max(10, int(15 * (video_duration_sec / 600)))
+        return f"+ ~{est}s"
+    elif feature == "pdf":
+        return "+ ~5s"
+    return "+ 0s"
+
+
+
 # ──────────────────────────── Setup Popup ───────────────────────────
 
 
@@ -482,7 +504,7 @@ def _get_shared_pdf_css(theme: str = "Textbook") -> str:
         body { color: #ececf1; background-color: #212121; padding: 20mm; }
         h1 { color: #ffffff; font-size: 24pt; border-bottom: 1px solid #4d4d4d; }
         h2 { color: #f9f9f9; font-size: 18pt; border-bottom: 1px solid #3d3d3d; }
-        pre { background-color: #0d0d0d; padding: 12px; border-left: 4px solid #10a37f; color: #ececf1; }
+        pre { background-color: #0d0d0d; padding: 12px; border-left: 4px solid #10a37f; }
         blockquote { border-left: 4px solid #10a37f; background-color: #2f2f2f; padding: 10px; }
         th { background-color: #2f2f2f; padding: 8px; border: 1px solid #4d4d4d; color: #fff; }
         td { padding: 8px; border: 1px solid #4d4d4d; }
@@ -691,8 +713,10 @@ class StudySuiteApp(ctk.CTk):
         self.auto_pdf_var = tk.BooleanVar(value=True)
         self.input_mode_var = tk.StringVar(value="YouTube URL")
 
-        # Chat session reference
+        # Chat session reference and chat history state retention
         self.active_chat_session: Optional[ChatSession] = None
+        self.chat_histories: Dict[str, List[Tuple[str, str]]] = {}
+
 
         # Build UI Shell
         self._build_layout_grid()
@@ -822,8 +846,12 @@ class StudySuiteApp(ctk.CTk):
         self.status_pill.pack(side="left", padx=(0, 8))
 
         self.dock_status_lbl = ctk.CTkLabel(
-            self.dock_bar, text="Status: Ready", font=("Segoe UI", 11, "bold"), text_color=TEXT_MUTED
+            self.dock_bar,
+            text="Status: Ready",
+            font=("Segoe UI", 11, "bold"),
+            text_color=TEXT_MUTED,
         )
+
         self.dock_status_lbl.pack(side="left", padx=(0, 15))
 
         self.dock_step_lbl = ctk.CTkLabel(
@@ -1148,7 +1176,10 @@ class StudySuiteApp(ctk.CTk):
         ).pack(anchor="w", pady=(0, 4))
         ctk.CTkLabel(
             view_frame,
-            text="Extract YouTube transcripts, extract vision keyframes, build Knowledge Graphs, and generate notes.",
+            text=(
+                "Extract YouTube transcripts, extract vision keyframes, "
+                "build Knowledge Graphs, and generate notes."
+            ),
             font=("Segoe UI", 11),
             text_color=TEXT_MUTED,
         ).pack(anchor="w", pady=(0, 15))
@@ -1257,9 +1288,10 @@ class StudySuiteApp(ctk.CTk):
         ctk.CTkLabel(p1, text="📸 Vision Engine", font=("Segoe UI", 13, "bold")).pack(
             anchor="w", padx=12, pady=(12, 2)
         )
+        hint_v = get_powerup_time_hint("vision")
         ctk.CTkLabel(
             p1,
-            text="Extracts visual keyframes (+ ~35s)",
+            text=f"Extracts visual keyframes ({hint_v})",
             font=("Segoe UI", 10),
             text_color=TEXT_MUTED,
         ).pack(anchor="w", padx=12, pady=(0, 10))
@@ -1279,9 +1311,10 @@ class StudySuiteApp(ctk.CTk):
         ctk.CTkLabel(
             p2, text="🕸️ Knowledge Graph", font=("Segoe UI", 13, "bold")
         ).pack(anchor="w", padx=12, pady=(12, 2))
+        hint_k = get_powerup_time_hint("kag")
         ctk.CTkLabel(
             p2,
-            text="Mermaid HTML Graph (+ ~15s)",
+            text=f"Mermaid HTML Graph ({hint_k})",
             font=("Segoe UI", 10),
             text_color=TEXT_MUTED,
         ).pack(anchor="w", padx=12, pady=(0, 10))
@@ -1301,9 +1334,10 @@ class StudySuiteApp(ctk.CTk):
         ctk.CTkLabel(
             p3, text="📄 Auto PDF Export", font=("Segoe UI", 13, "bold")
         ).pack(anchor="w", padx=12, pady=(12, 2))
+        hint_p = get_powerup_time_hint("pdf")
         ctk.CTkLabel(
             p3,
-            text="Exports PDF on finish (+ ~5s)",
+            text=f"Exports PDF on finish ({hint_p})",
             font=("Segoe UI", 10),
             text_color=TEXT_MUTED,
         ).pack(anchor="w", padx=12, pady=(0, 10))
@@ -1381,7 +1415,7 @@ class StudySuiteApp(ctk.CTk):
             if self.multimodal_var.get():
                 ans = messagebox.askyesno(
                     "Bandwidth Warning",
-                    "Extracting video frames requires downloading video content (~50-200MB).\nProceed?",
+                    "Extracting video frames requires downloading video (~50-200MB).\nProceed?",
                     parent=self,
                 )
                 if not ans:
@@ -1469,13 +1503,12 @@ class StudySuiteApp(ctk.CTk):
                 if result and result.get("success"):
                     add_recent_output(output_dir)
                     if self.auto_pdf_var.get():
-                        detailed_notes = os.path.join(
-                            output_dir,
-                            [f for f in os.listdir(output_dir) if f.endswith("_Detailed_Notes.md")][0]
-                            if any(f.endswith("_Detailed_Notes.md") for f in os.listdir(output_dir))
-                            else "",
-                        )
-                        if os.path.exists(detailed_notes):
+                        out_files = os.listdir(output_dir)
+                        detailed = [
+                            f for f in out_files if f.endswith("_Detailed_Notes.md")
+                        ]
+                        if detailed:
+                            detailed_notes = os.path.join(output_dir, detailed[0])
                             pdf_out = os.path.splitext(detailed_notes)[0] + ".pdf"
                             convert_file_to_pdf(
                                 detailed_notes,
@@ -1670,6 +1703,17 @@ class StudySuiteApp(ctk.CTk):
             wrap="word",
         )
         chat_log.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=10, pady=6)
+
+        # Restore retained chat history for course_dir
+        saved_history = self.chat_histories.setdefault(course_dir, [])
+        chat_log.configure(state="normal")
+        chat_log.delete("1.0", tk.END)
+        for sender, msg in saved_history:
+            if sender == "AI":
+                chat_log.insert(tk.END, f"AI: {msg}\n\n")
+            else:
+                chat_log.insert(tk.END, f"You: {msg}\n")
+        chat_log.see(tk.END)
         chat_log.configure(state="disabled")
 
         chat_input = ctk.CTkEntry(
@@ -1695,6 +1739,7 @@ class StudySuiteApp(ctk.CTk):
                 return
 
             chat_input.delete(0, tk.END)
+            self.chat_histories[course_dir].append(("You", user_msg))
             chat_log.configure(state="normal")
             chat_log.insert(tk.END, f"You: {user_msg}\n")
             chat_log.see(tk.END)
@@ -1711,6 +1756,7 @@ class StudySuiteApp(ctk.CTk):
                             course_dir, chat_model_var.get()
                         )
                     ans = self.active_chat_session.send(user_msg)
+                    self.chat_histories[course_dir].append(("AI", ans))
 
                     def update() -> None:
                         chat_log.configure(state="normal")
@@ -1732,6 +1778,7 @@ class StudySuiteApp(ctk.CTk):
 
         def clear_chat() -> None:
             self.active_chat_session = None
+            self.chat_histories[course_dir] = []
             chat_log.configure(state="normal")
             chat_log.delete("1.0", tk.END)
             chat_log.configure(state="disabled")
@@ -1881,11 +1928,34 @@ class StudySuiteApp(ctk.CTk):
                     )
                     row_f.pack(fill="x", pady=4, padx=5)
 
-                    ctk.CTkLabel(
-                        row_f,
-                        text=f"🖼️ {fname}",
-                        font=("Segoe UI", 11, "bold"),
-                    ).pack(side="left", padx=12, pady=10)
+                    thumb_rendered = False
+                    try:
+                        from PIL import Image
+
+                        pil_img = Image.open(img_p)
+                        pil_img.thumbnail((160, 90))
+                        ctk_img = ctk.CTkImage(
+                            light_image=pil_img, dark_image=pil_img, size=(160, 90)
+                        )
+                        img_lbl = ctk.CTkLabel(row_f, image=ctk_img, text="")
+                        img_lbl.image = ctk_img  # Store reference
+                        img_lbl.pack(side="left", padx=12, pady=8)
+                        thumb_rendered = True
+                    except Exception:
+                        pass
+
+                    if not thumb_rendered:
+                        ctk.CTkLabel(
+                            row_f,
+                            text=f"🖼️ {fname}",
+                            font=("Segoe UI", 11, "bold"),
+                        ).pack(side="left", padx=12, pady=10)
+                    else:
+                        ctk.CTkLabel(
+                            row_f,
+                            text=fname,
+                            font=("Segoe UI", 11, "bold"),
+                        ).pack(side="left", padx=12, pady=10)
 
                     ctk.CTkButton(
                         row_f,
@@ -2046,10 +2116,10 @@ class StudySuiteApp(ctk.CTk):
             border_color=BORDER_COLOR,
         )
         h2.pack(fill="x", pady=6)
-        pw_ready = _is_playwright_ready()
+        pw_status = "🟢 Ready" if pw_ready else "🔴 Not Installed"
         ctk.CTkLabel(
             h2,
-            text=f"📄 Playwright PDF Chromium Engine: {'🟢 Ready' if pw_ready else '🔴 Not Installed'}",
+            text=f"📄 Playwright PDF Engine: {pw_status}",
             font=("Segoe UI", 12, "bold"),
         ).pack(side="left", padx=15, pady=12)
         if not pw_ready:
@@ -2071,9 +2141,10 @@ class StudySuiteApp(ctk.CTk):
         )
         h3.pack(fill="x", pady=6)
         ollama_ready = check_ollama_status()
+        ollama_status = "🟢 Connected" if ollama_ready else "🔴 Offline"
         ctk.CTkLabel(
             h3,
-            text=f"🦙 Local Ollama Service (11434): {'🟢 Connected' if ollama_ready else '🔴 Offline'}",
+            text=f"🦙 Local Ollama Service (11434): {ollama_status}",
             font=("Segoe UI", 12, "bold"),
         ).pack(side="left", padx=15, pady=12)
 
@@ -2094,7 +2165,7 @@ class StudySuiteApp(ctk.CTk):
         ).pack(anchor="w", padx=15, pady=(15, 4))
         ctk.CTkLabel(
             util_card,
-            text="Select any standalone Markdown file from your computer and convert it to print-ready PDF.",
+            text="Select any standalone Markdown file to convert to print-ready PDF.",
             font=("Segoe UI", 11),
             text_color=TEXT_MUTED,
         ).pack(anchor="w", padx=15, pady=(0, 15))
@@ -2109,7 +2180,9 @@ class StudySuiteApp(ctk.CTk):
             fg_color=CARD_BG,
             border_width=1,
             border_color=BORDER_COLOR,
-            command=lambda: preview_pdf(self.log_message, self, theme=self.pdf_theme_var.get()),
+            command=lambda: preview_pdf(
+                self.log_message, self, theme=self.pdf_theme_var.get()
+            ),
         ).pack(side="left", padx=(0, 10))
 
         ctk.CTkButton(
@@ -2118,7 +2191,9 @@ class StudySuiteApp(ctk.CTk):
             font=("Segoe UI", 11, "bold"),
             fg_color=ACCENT_COLOR,
             hover_color=ACCENT_HOVER,
-            command=lambda: convert_and_save_pdf(self.log_message, self, theme=self.pdf_theme_var.get()),
+            command=lambda: convert_and_save_pdf(
+                self.log_message, self, theme=self.pdf_theme_var.get()
+            ),
         ).pack(side="left")
 
 
