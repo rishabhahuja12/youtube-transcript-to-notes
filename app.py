@@ -158,8 +158,8 @@ def _show_env_help_popup(root):
     tabview = ctk.CTkTabview(help_win, height=220)
     tabview.pack(fill="x", padx=20, pady=(0, 20))
     
-    text_tab = tabview.add("Text Models (Reasoning)")
-    vision_tab = tabview.add("Vision Models (Images)")
+    text_tab = tabview.add("Text Models (Reasoning, JSON)")
+    vision_tab = tabview.add("Vision Models (Image Processing)")
 
     pool_frame_text = ctk.CTkScrollableFrame(text_tab, height=140)
     pool_frame_text.pack(fill="both", expand=True, padx=5, pady=5)
@@ -284,7 +284,7 @@ def _show_env_help_popup(root):
             return
             
         current_tab = tabview.get()
-        cap = "vision" if current_tab == "Vision Models (Images)" else "text"
+        cap = "vision" if current_tab == "Vision Models (Image Processing)" else "text"
 
         configs.append(ProviderConfig(provider=p, endpoint_url=e, api_key=k, model_name=m, capability=cap))
         refresh_pool_display()

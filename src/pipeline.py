@@ -73,7 +73,9 @@ def run_pipeline(
     try:
         active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
         if active_pool.total == 0:
-            raise ValueError("No API keys configured for the requested capability.")
+            if enable_multimodal:
+                raise ValueError("You requested Vision features but have no Vision models in your API pool.")
+            raise ValueError("No text API keys configured.")
 
         on_log("=== PIPELINE STARTED ===")
 
@@ -175,7 +177,9 @@ def run_pipeline_from_data(
     try:
         active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
         if active_pool.total == 0:
-            raise ValueError("No API keys configured for the requested capability.")
+            if enable_multimodal:
+                raise ValueError("You requested Vision features but have no Vision models in your API pool.")
+            raise ValueError("No text API keys configured.")
 
         on_log("=== PIPELINE STARTED ===")
 
