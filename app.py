@@ -2116,6 +2116,7 @@ class StudySuiteApp(ctk.CTk):
             border_color=BORDER_COLOR,
         )
         h2.pack(fill="x", pady=6)
+        pw_ready = _is_playwright_ready()
         pw_status = "🟢 Ready" if pw_ready else "🔴 Not Installed"
         ctk.CTkLabel(
             h2,
