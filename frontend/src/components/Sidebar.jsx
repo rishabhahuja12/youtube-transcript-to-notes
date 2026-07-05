@@ -29,7 +29,7 @@ const Sidebar = () => {
               key={item.id}
               className={`nav-item ${currentScreen === item.id ? 'active' : ''}`}
               onClick={() => setCurrentScreen(item.id)}
-              onKeyDown={(e) => e.key === 'Enter' && setCurrentScreen(item.id)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setCurrentScreen(item.id)}
               role="button"
               tabIndex={0}
             >

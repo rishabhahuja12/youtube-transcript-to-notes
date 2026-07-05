@@ -53,8 +53,7 @@ const FooterDock = () => {
           </div>
           <div className="progress-bar-bg">
             <div 
-              className="progress-bar-fill" 
-              style={{ width: `${percent}%` }}
+              className={`progress-bar-fill w-${percent}`}
             ></div>
           </div>
         </div>
