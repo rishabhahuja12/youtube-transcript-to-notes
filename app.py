@@ -355,6 +355,26 @@ def _get_shared_pdf_css(theme="Textbook"):
         a { color: #2563eb; text-decoration: none; }
         @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
         """
+    elif theme == "ChatGPT Dark":
+        theme_css = """
+        body { color: #ececf1; background-color: #212121; }
+        h1 { color: #ffffff; font-size: 24pt; border-bottom: 1px solid #4d4d4d; padding-bottom: 6px; }
+        h2 { color: #f9f9f9; font-size: 18pt; border-bottom: 1px solid #3d3d3d; padding-bottom: 4px; }
+        h3 { color: #b0b0b0; font-size: 14pt; margin-top: 1.2em; }
+        pre { background-color: #0d0d0d; padding: 12px; border-left: 4px solid #10a37f; font-family: 'Courier New', Courier, monospace; font-size: 10pt; white-space: pre-wrap; color: #ececf1; }
+        code { background-color: #2f2f2f; color: #fca5a5; padding: 2px 5px; font-family: 'Courier New', Courier, monospace; }
+        blockquote { border-left: 4px solid #10a37f; background-color: #2f2f2f; padding: 10px 15px; color: #d1d1d6; font-style: italic; }
+        th { background-color: #2f2f2f; font-weight: bold; padding: 10px; border: 1px solid #4d4d4d; color: #ffffff; text-align: left; }
+        td { padding: 10px; border: 1px solid #4d4d4d; }
+        tr:nth-child(even) { background-color: #2f2f2f; opacity: 0.8; }
+        a { color: #10a37f; text-decoration: none; }
+        @media print { 
+            body { background-color: #212121 !important; color: #ececf1 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+            pre { background-color: #0d0d0d !important; color: #ececf1 !important; }
+            blockquote { background-color: #2f2f2f !important; }
+        }
+        @page { background-color: #212121; }
+        """
     else: # Minimal Mono
         theme_css = """
         body { font-family: 'Courier New', Courier, monospace; color: #000000; }
@@ -846,7 +866,7 @@ def main():
     
     ctk.CTkOptionMenu(
         pdf_tab, variable=pdf_theme_var,
-        values=["Textbook", "Minimal Mono"],
+        values=["Textbook", "Minimal Mono", "ChatGPT Dark"],
         font=("Segoe UI", 11)
     ).grid(row=1, column=1, sticky="w", padx=5, pady=4)
 
@@ -957,7 +977,7 @@ def main():
 
     pdf_theme_menu = ctk.CTkOptionMenu(
         actions_inner, variable=pdf_theme_var,
-        values=["Textbook", "Minimal Mono"],
+        values=["Textbook", "Minimal Mono", "ChatGPT Dark"],
         font=("Segoe UI", 11)
     )
 
