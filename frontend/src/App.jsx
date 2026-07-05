@@ -10,11 +10,11 @@ const MainContent = () => {
     <main className="main-content">
       <div className="content-area">
         {/* Placeholder for content based on activeTab */}
-        <div className="glass-card" style={{ padding: '2rem', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-          <h2 style={{ fontSize: '2rem', marginBottom: '1rem', color: 'hsl(var(--accent-primary))' }}>
+        <div className="glass-card placeholder-view">
+          <h2 className="placeholder-title">
             {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} View
           </h2>
-          <p style={{ maxWidth: '400px' }}>
+          <p className="placeholder-text">
             This area will contain the main functionality for the {activeTab} section. Select a different tab in the sidebar to navigate.
           </p>
         </div>

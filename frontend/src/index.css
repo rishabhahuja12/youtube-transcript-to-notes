@@ -360,3 +360,34 @@ p {
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--border-highlight));
 }
+
+/* Extracted Inline Styles */
+.placeholder-view {
+  padding: 2rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.placeholder-title {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: hsl(var(--accent-primary));
+}
+
+.placeholder-text {
+  max-width: 400px;
+}
+
+.log-drawer-close {
+  border: none;
+  padding: 0.25rem;
+}
+
+.log-time {
+  opacity: 0.5;
+  margin-right: 8px;
+}

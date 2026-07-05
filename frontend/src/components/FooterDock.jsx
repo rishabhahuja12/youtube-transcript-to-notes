@@ -12,8 +12,7 @@ const FooterDock = () => {
         <div className="log-header">
           <span>System Logs</span>
           <button 
-            className="log-drawer-toggle" 
-            style={{ border: 'none', padding: '0.25rem' }}
+            className="log-drawer-toggle log-drawer-close" 
             onClick={() => setIsDrawerOpen(false)}
           >
             <X size={16} />
@@ -25,7 +24,7 @@ const FooterDock = () => {
           ) : (
             logs.map((log) => (
               <div key={log.id} className={`log-entry ${log.type}`}>
-                <span style={{ opacity: 0.5, marginRight: '8px' }}>[{log.time}]</span>
+                <span className="log-time">[{log.time}]</span>
                 {log.message}
               </div>
             ))
