@@ -124,7 +124,7 @@ def check_env_and_show_help(root):
 
 def _show_env_help_popup(root):
     """Display an interactive dialog for secure API credential setup."""
-    from src.credentials import store_all_credentials
+    from src.credentials import store_all_credentials, get_all_credentials
     
     help_win = ctk.CTkToplevel(root)
     help_win.title("API Configuration Setup")
@@ -170,6 +170,21 @@ def _show_env_help_popup(root):
             endpoint_var.set("http://localhost:11434")
             model_var.set("llama3")
             api_key_var.set("")
+
+    # Load previously saved credentials (if any) BEFORE adding the trace
+    # so the trace doesn't fire and overwrite saved endpoint/model with defaults.
+    try:
+        saved = get_all_credentials()
+        if saved.get('provider'):
+            provider_var.set(saved['provider'])
+        if saved.get('endpoint_url'):
+            endpoint_var.set(saved['endpoint_url'])
+        if saved.get('api_key'):
+            api_key_var.set(saved['api_key'])
+        if saved.get('model_name'):
+            model_var.set(saved['model_name'])
+    except Exception:
+        pass  # Use defaults if keyring fails
 
     provider_var.trace_add("write", on_provider_change)
 
@@ -455,8 +470,8 @@ def main():
 
     root = ctk.CTk()
     root.title(f"YouTube Transcript to Notes Pipeline v{APP_VERSION}")
-    root.geometry("1200x800")
-    root.minsize(1050, 750)
+    root.geometry("1200x900")
+    root.minsize(1050, 900)
 
     # ── Global state ──
     cancel_event = threading.Event()
@@ -947,7 +962,7 @@ def main():
             toggle_btn.configure(text="Hide Details")
 
     toggle_btn = ctk.CTkButton(
-        console_header, text="Show Details", width=80, height=26,
+        console_header, text="Hide Details", width=80, height=26,
         font=("Segoe UI", 10, "bold"), fg_color="#3f3f46", hover_color="#52525b",
         command=toggle_console
     )
@@ -968,15 +983,25 @@ def main():
         console_card, fg_color="#09090b", text_color="#10b981",
         font=("Consolas", 11), border_width=0, corner_radius=8
     )
+    console_text.pack(fill="both", expand=True, padx=15, pady=(0, 15))
     console_text.configure(state="disabled")
 
     # ── Startup ──
     load_config(transcript_path_var, timestamps_path_var, output_dir_var)
     check_env_and_show_help(root)
 
-    provider, endpoint, _, model = get_llm_config(ENV_PATH)
+    try:
+        from src.credentials import get_llm_config_from_keyring, has_stored_credentials
+        if has_stored_credentials():
+            provider, endpoint, _, model = get_llm_config_from_keyring()
+            config_source = "keyring"
+        else:
+            raise ValueError("No keyring credentials")
+    except Exception:
+        provider, endpoint, _, model = get_llm_config(ENV_PATH)
+        config_source = ".env"
     log_message("System initialized.")
-    log_message(f"LLM Config loaded from .env: {provider} / {model} @ {endpoint}")
+    log_message(f"LLM Config loaded from {config_source}: {provider} / {model} @ {endpoint}")
     log_message("Select your files and click 'Start Pipeline' to begin.")
     
     validate_inputs()
