@@ -5,7 +5,7 @@ import { startPipeline, connectPipelineWebSocket } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle } from 'lucide-react';
 
 const NewPipeline = () => {
-  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus } = useAppContext();
+  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus, setActiveCourseDir } = useAppContext();
   const [inputType, setInputType] = useState('youtube'); // 'youtube' or 'local'
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
@@ -62,6 +62,7 @@ const NewPipeline = () => {
           if (wsConnection) wsConnection.close();
           setPipelineStatus('completed');
           addLog('Pipeline completed successfully!', 'success');
+          if (msg.course_dir) setActiveCourseDir(msg.course_dir);
           setCurrentScreen('courseWorkspace');
         } else if (msg.type === 'error') {
           if (wsConnection) wsConnection.close();
