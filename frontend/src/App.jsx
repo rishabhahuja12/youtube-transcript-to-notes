@@ -35,7 +35,9 @@ const MainContent = () => {
   return (
     <main className="main-content">
       <div className="content-area">
-        {renderScreen()}
+        <ErrorBoundary FallbackComponent={Fallback}>
+          {renderScreen()}
+        </ErrorBoundary>
       </div>
       {showFooter && <FooterDock />}
     </main>
@@ -53,14 +55,12 @@ function Fallback({ error }) {
 
 function App() {
   return (
-    <ErrorBoundary FallbackComponent={Fallback}>
-      <AppProvider>
-        <div className="app-container">
-          <Sidebar />
-          <MainContent />
-        </div>
-      </AppProvider>
-    </ErrorBoundary>
+    <AppProvider>
+      <div className="app-container">
+        <Sidebar />
+        <MainContent />
+      </div>
+    </AppProvider>
   );
 }
 

@@ -519,7 +519,7 @@ p {
 /* Buttons */
 .primary-button {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--text);
   border: none;
   padding: var(--space-md) var(--space-xl);
   border-radius: var(--radius);
