@@ -30,6 +30,14 @@ const NewPipeline = () => {
       setError("Please enter a valid URL or path");
       return;
     }
+    
+    if (inputType === 'youtube') {
+      const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
+      if (!ytRegex.test(url)) {
+        setError("Please enter a valid YouTube URL");
+        return;
+      }
+    }
 
     try {
       setIsSubmitting(true);
@@ -132,7 +140,7 @@ const NewPipeline = () => {
               value={outputDir}
               onChange={(e) => setOutputDir(e.target.value)}
             />
-            <small className="field-hint">Specify full path if you want to save outside the default workspace.</small>
+            <small className="field-hint">Enter full path</small>
           </div>
         </div>
 
