@@ -10,7 +10,10 @@ const CourseCard = ({ course, onClick }) => {
       onClick={onClick} 
       role="button" 
       tabIndex={0} 
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+      onKeyDown={(e) => { 
+        if (e.key === 'Enter') onClick();
+        if (e.key === ' ') { e.preventDefault(); onClick(); }
+      }}
     >
       <div className="course-card-icon">
         {type === 'youtube' ? <Video size={24} /> : <Folder size={24} />}

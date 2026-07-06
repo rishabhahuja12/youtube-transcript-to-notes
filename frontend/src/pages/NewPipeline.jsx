@@ -5,7 +5,7 @@ import { startPipeline, connectPipelineWebSocket } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle } from 'lucide-react';
 
 const NewPipeline = () => {
-  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress } = useAppContext();
+  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus } = useAppContext();
   const [inputType, setInputType] = useState('youtube'); // 'youtube' or 'local'
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
@@ -53,16 +53,18 @@ const NewPipeline = () => {
       await startPipeline(payload);
       setPipelineStatus('running');
       
-      connectPipelineWebSocket((msg) => {
+      const wsConnection = connectPipelineWebSocket((msg) => {
         if (msg.type === 'log') {
           addLog(msg.message, msg.level || 'info');
         } else if (msg.type === 'progress') {
           setPipelineProgress({ current: msg.current, total: msg.total });
         } else if (msg.type === 'complete') {
+          if (wsConnection) wsConnection.close();
           setPipelineStatus('completed');
           addLog('Pipeline completed successfully!', 'success');
           setCurrentScreen('courseWorkspace');
         } else if (msg.type === 'error') {
+          if (wsConnection) wsConnection.close();
           setPipelineStatus('error');
           addLog(`Pipeline error: ${msg.message}`, 'error');
         }
@@ -181,9 +183,9 @@ const NewPipeline = () => {
           </div>
         )}
 
-        <button type="submit" className="primary-button start-pipeline-button" disabled={isSubmitting}>
+        <button type="submit" className="primary-button start-pipeline-button" disabled={isSubmitting || pipelineStatus === 'running'}>
           <Rocket size={20} />
-          {isSubmitting ? 'Starting Pipeline...' : 'Start Pipeline Processing'}
+          {isSubmitting || pipelineStatus === 'running' ? 'Starting Pipeline...' : 'Start Pipeline Processing'}
         </button>
       </form>
     </div>

@@ -8,7 +8,10 @@ const PowerUpCard = ({ icon, title, description, timeHint, isActive, onToggle })
       role="switch"
       aria-checked={isActive}
       tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(); }}
+      onKeyDown={(e) => { 
+        if (e.key === 'Enter') onToggle();
+        if (e.key === ' ') { e.preventDefault(); onToggle(); }
+      }}
     >
       <div className="power-up-icon">{icon}</div>
       <div className="power-up-content">
