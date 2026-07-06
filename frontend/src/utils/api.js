@@ -1,5 +1,5 @@
-const API_BASE_URL = 'http://localhost:8000';
-const WS_BASE_URL = 'ws://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 export const fetchLibrary = async () => {
   const response = await fetch(`${API_BASE_URL}/api/content/library`, {
@@ -24,6 +24,48 @@ export const fetchNotes = async (id, file) => {
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   const data = await response.json();
   return data.content;
+};
+
+export const addCourseToLibrary = async (url) => {
+  const response = await fetch(`${API_BASE_URL}/api/content/library/add`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ path: url }),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const startPipeline = async (payload) => {
+  const response = await fetch(`${API_BASE_URL}/api/pipeline/start`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const fetchCourseGraph = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/graph`, {
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const fetchCourseKeyframes = async (id) => {
+  const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/keyframes`, {
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
 };
 
 export const connectPipelineWebSocket = (onMessage) => {

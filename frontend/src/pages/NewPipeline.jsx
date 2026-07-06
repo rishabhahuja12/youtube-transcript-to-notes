@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
-import { addCourseToLibrary, startPipeline } from '../utils/api';
+import { startPipeline, connectPipelineWebSocket } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle } from 'lucide-react';
 
 const NewPipeline = () => {
-  const { setPipelineStatus, setCurrentScreen } = useAppContext();
+  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress } = useAppContext();
   const [inputType, setInputType] = useState('youtube'); // 'youtube' or 'local'
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
@@ -35,15 +35,31 @@ const NewPipeline = () => {
       setIsSubmitting(true);
       setError(null);
       
-      // Based on API requirement, we add course and/or start pipeline
-      // We will try addCourseToLibrary for simplicity, which triggers the backend
-      await addCourseToLibrary(url);
+      const payload = {
+        url,
+        topic,
+        outputDir,
+        powerUps
+      };
       
-      // Update pipeline status context to 'running' so FooterDock appears
+      await startPipeline(payload);
       setPipelineStatus('running');
       
-      // Optionally navigate away, though usually we wait on this screen or go to library
-      // setCurrentScreen('library');
+      connectPipelineWebSocket((msg) => {
+        if (msg.type === 'log') {
+          addLog(msg.message, msg.level || 'info');
+        } else if (msg.type === 'progress') {
+          setPipelineProgress({ current: msg.current, total: msg.total });
+        } else if (msg.type === 'complete') {
+          setPipelineStatus('completed');
+          addLog('Pipeline completed successfully!', 'success');
+          setCurrentScreen('courseWorkspace');
+        } else if (msg.type === 'error') {
+          setPipelineStatus('error');
+          addLog(`Pipeline error: ${msg.message}`, 'error');
+        }
+      });
+      
       
     } catch (err) {
       setError(err.message || 'Failed to start pipeline');

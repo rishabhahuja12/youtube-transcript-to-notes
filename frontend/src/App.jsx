@@ -1,6 +1,8 @@
 import React from 'react';
 import Sidebar from './components/Sidebar';
 import FooterDock from './components/FooterDock';
+import Library from './pages/Library';
+import NewPipeline from './pages/NewPipeline';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { ErrorBoundary } from 'react-error-boundary';
 
@@ -9,17 +11,31 @@ const MainContent = () => {
   
   const showFooter = pipelineStatus === 'running' || pipelineLogs.length > 0;
 
+  const renderScreen = () => {
+    switch (currentScreen) {
+      case 'library':
+        return <Library />;
+      case 'newPipeline':
+        return <NewPipeline />;
+      default:
+        return (
+          <div className="glass-card placeholder-view">
+            <h2 className="placeholder-title">
+              {currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1).replace(/([A-Z])/g, ' $1')} View
+            </h2>
+            <p className="placeholder-text">
+              This area will contain the main functionality for the {currentScreen} section. 
+              Select a different tab in the sidebar to navigate.
+            </p>
+          </div>
+        );
+    }
+  };
+
   return (
     <main className="main-content">
       <div className="content-area">
-        <div className="glass-card placeholder-view">
-          <h2 className="placeholder-title">
-            {currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1).replace(/([A-Z])/g, ' $1')} View
-          </h2>
-          <p className="placeholder-text">
-            This area will contain the main functionality for the {currentScreen} section. Select a different tab in the sidebar to navigate.
-          </p>
-        </div>
+        {renderScreen()}
       </div>
       {showFooter && <FooterDock />}
     </main>

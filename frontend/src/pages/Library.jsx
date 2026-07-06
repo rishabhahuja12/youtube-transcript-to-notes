@@ -27,7 +27,7 @@ const Library = () => {
 
   const handleCourseClick = (path) => {
     setActiveCourseDir(path);
-    // In Stage 5 this will switch to Course Workspace
+    setCurrentScreen('courseWorkspace');
   };
 
   const goToNewPipeline = () => {
@@ -38,7 +38,7 @@ const Library = () => {
     return (
       <div className="library-page fade-in">
         <div className="empty-state glass-card">
-          <RefreshCw className="empty-state-icon" size={48} style={{ animation: 'spin 2s linear infinite' }} />
+          <RefreshCw className="empty-state-icon loader-spin" size={48} />
           <h3>Loading Library...</h3>
         </div>
       </div>
@@ -49,7 +49,7 @@ const Library = () => {
     return (
       <div className="library-page fade-in">
         <div className="empty-state glass-card">
-          <div style={{ color: 'var(--error)' }}>
+          <div className="error-text">
             <h3>Error loading library</h3>
             <p>{error}</p>
           </div>
@@ -76,7 +76,7 @@ const Library = () => {
           <h3>No courses found</h3>
           <p>You haven't processed any courses yet. Start a new pipeline to build your library.</p>
           <button className="primary-button" onClick={goToNewPipeline}>
-            Start a new pipeline
+            Start your first course
           </button>
         </div>
       ) : (

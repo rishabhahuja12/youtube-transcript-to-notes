@@ -899,3 +899,23 @@ p {
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+.loader-spin {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.error-text {
+  color: var(--error);
+}
+
+.course-badges {
+  display: flex;
+  gap: var(--space-sm);
+  margin-left: auto;
+}
