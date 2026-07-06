@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
 import { startPipeline, connectPipelineWebSocket } from '../utils/api';
-import { Video, Folder, Rocket, AlertCircle } from 'lucide-react';
+import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText } from 'lucide-react';
 
 const NewPipeline = () => {
   const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus, setActiveCourseDir } = useAppContext();
@@ -151,7 +151,7 @@ const NewPipeline = () => {
           <h3>Power-Ups</h3>
           <div className="power-ups-grid">
             <PowerUpCard 
-              icon="📸" 
+              icon={<Camera size={24} />} 
               title="Vision Engine" 
               description="Extract keyframes and text from video frames" 
               timeHint="~35s" 
@@ -159,7 +159,7 @@ const NewPipeline = () => {
               onToggle={() => togglePowerUp('vision')} 
             />
             <PowerUpCard 
-              icon="🕸️" 
+              icon={<Share2 size={24} />} 
               title="Knowledge Graph" 
               description="Build relationship graphs from entities" 
               timeHint="~15s" 
@@ -167,7 +167,7 @@ const NewPipeline = () => {
               onToggle={() => togglePowerUp('kag')} 
             />
             <PowerUpCard 
-              icon="📄" 
+              icon={<FileText size={24} />} 
               title="Auto PDF Export" 
               description="Generate styled PDF notes immediately" 
               timeHint="~5s" 

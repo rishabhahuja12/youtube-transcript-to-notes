@@ -27,9 +27,9 @@ const CourseCard = ({ course, onClick }) => {
             <Calendar size={14} /> {date || 'Recent'}
           </span>
           <div className="course-badges">
-            {badges?.vision && <span title="Vision">📸</span>}
-            {badges?.kag && <span title="Knowledge Graph">🕸️</span>}
-            {badges?.pdf && <span title="PDF Notes">📄</span>}
+            {badges?.vision && <Camera size={14} title="Vision" />}
+            {badges?.kag && <Share2 size={14} title="Knowledge Graph" />}
+            {badges?.pdf && <FileText size={14} title="PDF Notes" />}
           </div>
         </div>
       </div>
