@@ -635,13 +635,11 @@ p {
   gap: var(--space-lg);
 }
 
-font-size: 1.125rem;
-  margin-bottom: var(--space-xs);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.start-pipeline-button {
+  padding: var(--space-lg);
+  font-size: 1.125rem;
 }
+
 
 .course-path {
   font-size: 0.875rem;
