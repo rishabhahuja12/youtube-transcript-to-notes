@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
 import { addCourseToLibrary, startPipeline } from '../utils/api';
-import { Youtube, Folder, Rocket, AlertCircle } from 'lucide-react';
+import { Video, Folder, Rocket, AlertCircle } from 'lucide-react';
 
 const NewPipeline = () => {
   const { setPipelineStatus, setCurrentScreen } = useAppContext();
@@ -66,7 +66,7 @@ const NewPipeline = () => {
               className={`segment-button ${inputType === 'youtube' ? 'active' : ''}`}
               onClick={() => setInputType('youtube')}
             >
-              <Youtube size={18} />
+              <Video size={18} />
               YouTube URL
             </button>
             <button 
