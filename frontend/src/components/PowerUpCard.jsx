@@ -1,9 +1,10 @@
 import React from 'react';
+import { Check } from 'lucide-react';
 
-const PowerUpCard = ({ icon, title, description, timeHint, isActive, onToggle }) => {
+const PowerUpCard = ({ icon, title, description, isActive, onToggle }) => {
   return (
     <div 
-      className={`glass-card power-up-card ${isActive ? 'active' : ''}`}
+      className={`power-up-card ${isActive ? 'active' : ''}`}
       onClick={onToggle}
       role="switch"
       aria-checked={isActive}
@@ -18,7 +19,11 @@ const PowerUpCard = ({ icon, title, description, timeHint, isActive, onToggle })
         <h4 className="power-up-title">{title}</h4>
         <p className="power-up-description">{description}</p>
       </div>
-      <div className="power-up-hint">+{timeHint}</div>
+      {isActive && (
+        <div className="power-up-checkmark">
+          <Check size={16} />
+        </div>
+      )}
     </div>
   );
 };

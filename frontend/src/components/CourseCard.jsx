@@ -1,12 +1,12 @@
 import React from 'react';
-import { BookOpen, Calendar, Folder, Video, Layers, Camera, Share2, FileText } from 'lucide-react';
+import { Play, Eye, Share2, FileText } from 'lucide-react';
 
-const CourseCard = ({ course, onClick }) => {
-  const { title, path, date, type = 'youtube', badges = {} } = course;
+const CourseCard = ({ course, isRecent, onClick }) => {
+  const { title, path, date, badges = {}, duration = "42:10" } = course;
   
   return (
     <div 
-      className="glass-card course-card" 
+      className={`panel-card course-card ${isRecent ? 'recent-card' : ''}`} 
       onClick={onClick} 
       role="button" 
       tabIndex={0} 
@@ -15,22 +15,24 @@ const CourseCard = ({ course, onClick }) => {
         if (e.key === ' ') { e.preventDefault(); onClick(); }
       }}
     >
-      <div className="course-card-icon">
-        {type === 'youtube' ? <Video size={24} /> : <Folder size={24} />}
+      <div className="course-thumbnail">
+        <div className="play-icon-wrapper">
+          <Play size={20} fill="currentColor" />
+        </div>
+        <div className="duration-badge mono-text">{duration}</div>
       </div>
+      
       <div className="course-card-content">
         <h3 className="course-title">{title || 'Untitled Course'}</h3>
-        <p className="course-path" title={path}>{path}</p>
         
-        <div className="course-meta">
-          <span className="course-meta-item">
-            <Calendar size={14} /> {date || 'Recent'}
-          </span>
-          <div className="course-badges">
-            {badges?.vision && <Camera size={14} title="Vision" />}
-            {badges?.kag && <Share2 size={14} title="Knowledge Graph" />}
-            {badges?.pdf && <FileText size={14} title="PDF Notes" />}
-          </div>
+        <div className="course-status-icons">
+          <Eye size={14} className={badges?.vision ? 'active-icon' : 'inactive-icon'} />
+          <Share2 size={14} className={badges?.kag ? 'active-icon' : 'inactive-icon'} />
+          <FileText size={14} className={badges?.pdf ? 'active-icon' : 'inactive-icon'} />
+        </div>
+
+        <div className="course-footer mono-text">
+          {isRecent ? 'continue · just now' : `processed ${date || 'recently'}`}
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import CourseCard from '../components/CourseCard';
 import { fetchLibrary } from '../utils/api';
 import { useAppContext } from '../context/AppContext';
-import { RefreshCw, BookOpen } from 'lucide-react';
+import { RefreshCw, BookOpen, Plus } from 'lucide-react';
 
 const Library = () => {
   const [courses, setCourses] = useState([]);
@@ -25,8 +25,8 @@ const Library = () => {
     loadLibrary();
   }, []);
 
-  const handleCourseClick = (path) => {
-    setActiveCourseDir(path);
+  const handleCourseClick = (course, index) => {
+    setActiveCourseDir({ ...course, id: index });
     setCurrentScreen('courseWorkspace');
   };
 
@@ -37,9 +37,9 @@ const Library = () => {
   if (loading) {
     return (
       <div className="library-page fade-in">
-        <div className="empty-state glass-card">
+        <div className="empty-state panel-card">
           <RefreshCw className="empty-state-icon loader-spin" size={48} />
-          <h3>Loading Library...</h3>
+          <h3 className="serif-heading">Loading Library...</h3>
         </div>
       </div>
     );
@@ -48,9 +48,9 @@ const Library = () => {
   if (error) {
     return (
       <div className="library-page fade-in">
-        <div className="empty-state glass-card">
+        <div className="empty-state panel-card">
           <div className="error-text">
-            <h3>Error loading library</h3>
+            <h3 className="serif-heading">Error loading library</h3>
             <p>{error}</p>
           </div>
           <button className="primary-button" onClick={() => window.location.reload()}>
@@ -63,17 +63,20 @@ const Library = () => {
 
   return (
     <div className="library-page fade-in">
-      <div className="page-header">
-        <h2>Your Library</h2>
-        <button className="primary-button" onClick={goToNewPipeline}>
-          + New Course
-        </button>
+      <div className="library-header">
+        <div className="library-title-group">
+          <h2 className="serif-heading">Library</h2>
+          <span className="course-count mono-text">{courses.length} courses</span>
+        </div>
+        <div className="search-field">
+          <input type="text" placeholder="Search courses..." className="text-input search-input" />
+        </div>
       </div>
       
       {courses.length === 0 ? (
-        <div className="empty-state glass-card">
+        <div className="empty-state panel-card">
           <BookOpen className="empty-state-icon" size={64} />
-          <h3>No courses found</h3>
+          <h3 className="serif-heading">No courses found</h3>
           <p>You haven't processed any courses yet. Start a new pipeline to build your library.</p>
           <button className="primary-button" onClick={goToNewPipeline}>
             Start your first course
@@ -85,9 +88,25 @@ const Library = () => {
             <CourseCard 
               key={index} 
               course={course} 
-              onClick={() => handleCourseClick(course.path)} 
+              isRecent={index === 0}
+              onClick={() => handleCourseClick(course, index)} 
             />
           ))}
+          <div 
+            className="panel-card course-card new-course-tile" 
+            onClick={goToNewPipeline}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') goToNewPipeline();
+              if (e.key === ' ') { e.preventDefault(); goToNewPipeline(); }
+            }}
+          >
+            <div className="new-course-content">
+              <Plus size={24} />
+              <span>start a new course</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

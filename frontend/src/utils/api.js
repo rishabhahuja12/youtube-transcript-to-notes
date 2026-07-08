@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 export const fetchLibrary = async () => {
@@ -114,6 +114,36 @@ export const connectPipelineWebSocket = (onMessage) => {
 export const fetchOllamaStatus = async () => {
   const response = await fetch(`${API_BASE_URL}/api/settings/health`, {
     signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const chatWithCourse = async (id, message, model = 'llama3') => {
+  const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course_id: id, message, model }),
+    signal: AbortSignal.timeout(60000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const clearChat = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/chat/clear`, {
+    method: 'POST',
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const generatePdf = async (id, filename, theme = 'Textbook') => {
+  const response = await fetch(`${API_BASE_URL}/api/pdf/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ course_id: id, filename, theme }),
+    signal: AbortSignal.timeout(60000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();

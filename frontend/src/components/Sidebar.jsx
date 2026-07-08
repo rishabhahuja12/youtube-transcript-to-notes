@@ -13,10 +13,10 @@ const Sidebar = () => {
   ];
 
   return (
-    <aside className="sidebar glass-panel">
+    <aside className="sidebar">
       <div className="sidebar-header">
         <div className="brand">
-          <Zap size={24} color="var(--accent)" />
+          <Zap size={24} color="var(--highlighter)" />
           <span>StudySuite AI</span>
         </div>
       </div>
@@ -46,7 +46,7 @@ const Sidebar = () => {
       <div className="sidebar-footer">
         <div className="status-pill">
           <div className={`status-indicator ${ollamaStatus}`}></div>
-          <span>Ollama: {ollamaStatus === 'online' ? 'Connected' : ollamaStatus === 'offline' ? 'Disconnected' : 'Checking...'}</span>
+          <span>Ollama: {ollamaStatus === 'online' ? 'connected' : ollamaStatus === 'offline' ? 'disconnected' : 'checking...'}</span>
         </div>
       </div>
     </aside>
