@@ -56,8 +56,8 @@ def start_services() -> list:
                 "--host", "127.0.0.1", "--port", str(svc["port"])
             ],
             cwd=SCRIPT_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             encoding="utf-8",
             errors="replace"
         )
@@ -96,7 +96,7 @@ def main() -> None:
         # Open pywebview
         window = webview.create_window(
             "YT Transcriptor - AI Study Suite",
-            "http://127.0.0.1:8000",
+            "http://localhost:8000",
             width=1200,
             height=800,
             min_size=(800, 600)

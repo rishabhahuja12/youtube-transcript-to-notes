@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Wrench, FileText, Download, Play, CheckCircle } from 'lucide-react';
-import { API_BASE_URL } from '../utils/api';
+import { API_BASE_URL, installPlaywright } from '../utils/api';
 
 const Utilities = () => {
   const [pdfPath, setPdfPath] = useState('');
@@ -34,6 +34,22 @@ const Utilities = () => {
       setStatus({ type: 'error', message: err.message || 'Failed to export PDF.' });
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const [isInstalling, setIsInstalling] = useState(false);
+
+  const handleInstallPlaywright = async () => {
+    setIsInstalling(true);
+    setStatus(null);
+    try {
+      await installPlaywright();
+      setStatus({ type: 'success', message: 'Playwright installed successfully. System Health should now reflect it.' });
+    } catch (err) {
+      console.error(err);
+      setStatus({ type: 'error', message: err.message || 'Failed to install Playwright.' });
+    } finally {
+      setIsInstalling(false);
     }
   };
 
@@ -128,13 +144,21 @@ const Utilities = () => {
           Playwright is required for PDF exports. If it's not installed or missing browser binaries, use this tool to install them automatically.
         </p>
         <button 
-          className="flex items-center gap-2 bg-[var(--panel)] text-[var(--ink)] px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-          onClick={async () => {
-             alert('In a full implementation, this would trigger `playwright install chromium` via backend.');
-          }}
+          className="flex items-center gap-2 bg-[var(--panel)] text-[var(--ink)] px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+          onClick={handleInstallPlaywright}
+          disabled={isInstalling}
         >
-          <Play className="w-4 h-4" />
-          Run Playwright Install
+          {isInstalling ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-[var(--ink)]/30 border-t-[var(--ink)]"></div>
+              Installing (This takes a few minutes)...
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4" />
+              Run Playwright Install
+            </>
+          )}
         </button>
       </section>
     </div>

@@ -600,6 +600,67 @@ async def get_settings_health() -> HealthStatus:
 # ═══════════════════════════════════════════════════════════════════════
 
 
+def _convert_md_to_pdf(md_path: str, theme: str, pdf_path: str) -> None:
+    """Helper to convert a markdown file to a PDF."""
+    import asyncio
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+    venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
+    if os.path.exists(venv_site) and venv_site not in sys.path:
+        sys.path.append(venv_site)
+
+    import markdown
+    from playwright.sync_api import sync_playwright
+
+    with open(md_path, "r", encoding="utf-8", errors="replace") as f:
+        md_content = f.read()
+
+    html_body = markdown.markdown(md_content, extensions=["fenced_code", "tables"])
+    custom_css = _get_shared_pdf_css(theme)
+    mermaid_script = (
+        "<script>"
+        "document.querySelectorAll('code.language-mermaid').forEach((block) => {"
+        "const graphDef = block.textContent;"
+        "const parent = block.parentElement;"
+        "parent.outerHTML = '<div class=\"mermaid\">' + graphDef + '</div>';"
+        "});"
+        "</script>"
+    )
+
+    html_content = (
+        "<!DOCTYPE html>"
+        "<html>"
+        "<head>"
+        "<meta charset=\"utf-8\">"
+        f"<style>{custom_css}</style>"
+        "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>"
+        "<script>"
+        "mermaid.initialize({ startOnLoad: true });"
+        "</script>"
+        "</head>"
+        "<body>"
+        f"{html_body}"
+        f"{mermaid_script}"
+        "</body>"
+        "</html>"
+    )
+
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html", encoding="utf-8") as f:
+        f.write(html_content)
+        temp_html = f.name
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(f"file://{temp_html}", wait_until="networkidle")
+            page.pdf(path=pdf_path, format="A4", print_background=True, prefer_css_page_size=True)
+            browser.close()
+    finally:
+        if os.path.exists(temp_html):
+            os.remove(temp_html)
+
+
 @app.post("/pdf/export")
 async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
     """Convert a markdown file to PDF using Playwright.
@@ -627,65 +688,51 @@ async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
     pdf_path = md_path.rsplit(".", 1)[0] + ".pdf"
 
     try:
-        import asyncio
-        asyncio.set_event_loop(asyncio.new_event_loop())
-
-        venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
-        if os.path.exists(venv_site) and venv_site not in sys.path:
-            sys.path.append(venv_site)
-
-        import markdown
-        from playwright.sync_api import sync_playwright
-
-        with open(md_path, "r", encoding="utf-8", errors="replace") as f:
-            md_content = f.read()
-
-        html_body = markdown.markdown(md_content, extensions=["fenced_code", "tables"])
-        custom_css = _get_shared_pdf_css(req.theme)
-        mermaid_script = (
-            "<script>"
-            "document.querySelectorAll('code.language-mermaid').forEach((block) => {"
-            "const graphDef = block.textContent;"
-            "const parent = block.parentElement;"
-            "parent.outerHTML = '<div class=\"mermaid\">' + graphDef + '</div>';"
-            "});"
-            "</script>"
-        )
-
-        html_content = (
-            "<!DOCTYPE html>"
-            "<html>"
-            "<head>"
-            "<meta charset=\"utf-8\">"
-            f"<style>{custom_css}</style>"
-            "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>"
-            "<script>"
-            "mermaid.initialize({ startOnLoad: true });"
-            "</script>"
-            "</head>"
-            "<body>"
-            f"{html_body}"
-            f"{mermaid_script}"
-            "</body>"
-            "</html>"
-        )
-
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html", encoding="utf-8") as f:
-            f.write(html_content)
-            temp_html = f.name
-
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                page.goto(f"file://{temp_html}", wait_until="networkidle")
-                page.pdf(path=pdf_path, format="A4", print_background=True, prefer_css_page_size=True)
-                browser.close()
-        finally:
-            if os.path.exists(temp_html):
-                os.remove(temp_html)
-
+        _convert_md_to_pdf(md_path, req.theme, pdf_path)
         return {"path": pdf_path}
     except Exception as exc:
         logging.error(f"PDF export failed for {md_path}: {exc}")
         raise HTTPException(status_code=500, detail=f"PDF export failed: {exc}") from exc
+
+
+class ExternalPdfExportRequest(BaseModel):
+    """Request body for exporting external markdown to PDF."""
+    file_path: str
+    theme: str = "Textbook"
+
+
+@app.post("/pdf/export_external")
+async def pdf_export_external(req: ExternalPdfExportRequest) -> Dict[str, str]:
+    """Convert an external markdown file to PDF using Playwright."""
+    md_path = req.file_path
+    if not os.path.isfile(md_path):
+        raise HTTPException(status_code=400, detail="File not found.")
+    if not md_path.lower().endswith(".md"):
+        raise HTTPException(status_code=400, detail="Only .md files can be exported.")
+        
+    pdf_path = md_path.rsplit(".", 1)[0] + ".pdf"
+
+    try:
+        _convert_md_to_pdf(md_path, req.theme, pdf_path)
+        return {"path": pdf_path}
+    except Exception as exc:
+        logging.error(f"External PDF export failed for {md_path}: {exc}")
+        raise HTTPException(status_code=500, detail=f"External PDF export failed: {exc}") from exc
+
+
+@app.post("/settings/playwright/install")
+async def install_playwright() -> Dict[str, bool]:
+    """Install Playwright browsers automatically."""
+    try:
+        import subprocess
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            cwd=SCRIPT_DIR,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        return {"success": True}
+    except Exception as exc:
+        logging.error(f"Playwright install failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Install failed: {exc}") from exc

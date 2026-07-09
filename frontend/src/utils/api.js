@@ -176,3 +176,12 @@ export const generatePdf = async (id, filename, theme = 'Textbook') => {
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
+
+export const installPlaywright = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/playwright/install`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(300000) // 5 minutes timeout for installation
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
