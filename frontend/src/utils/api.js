@@ -127,11 +127,20 @@ export const fetchPoolSettings = async () => {
   return await response.json();
 };
 
-export const storePoolSettings = async (payload) => {
+export const addPoolKey = async (payload) => {
   const response = await fetch(`${API_BASE_URL}/api/settings/pool`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const deletePoolKey = async (index) => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/pool/${index}`, {
+    method: 'DELETE',
     signal: AbortSignal.timeout(30000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);

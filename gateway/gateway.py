@@ -118,17 +118,29 @@ async def websocket_pipeline(websocket: WebSocket) -> None:
         await websocket.close(code=1011, reason=str(e))
 
 # Mount React static files in production
-FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIST = os.path.join(_BASE, "frontend", "dist")
 
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_react_app(full_path: str):
-        # Serve index.html for all unrecognized paths to support client-side routing
-        index_file = os.path.join(FRONTEND_DIST, "index.html")
-        file_path = os.path.join(FRONTEND_DIST, full_path)
+    async def serve_react_app(full_path: str) -> FileResponse:
+        """Serve the React app or index.html for client-side routing.
         
+        Args:
+            full_path: The requested path.
+            
+        Returns:
+            FileResponse: The requested static file or index.html.
+        """
+        index_file = os.path.join(FRONTEND_DIST, "index.html")
+        file_path = os.path.abspath(os.path.join(FRONTEND_DIST, full_path))
+        
+        # Path Traversal protection
+        if not file_path.startswith(os.path.abspath(FRONTEND_DIST)):
+            return FileResponse(index_file)
+            
         if os.path.isfile(file_path):
             return FileResponse(file_path)
         return FileResponse(index_file)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchOllamaStatus, fetchPoolSettings, storePoolSettings } from '../utils/api';
+import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey } from '../utils/api';
 import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus } from 'lucide-react';
 
 const Settings = () => {
@@ -43,10 +43,9 @@ const Settings = () => {
   const handleAddKey = async (e) => {
     e.preventDefault();
     try {
-      const updatedPool = [...poolConfigs, newKey];
-      await storePoolSettings({ pool: updatedPool });
-      setPoolConfigs(updatedPool);
+      await addPoolKey(newKey);
       setNewKey({ provider: 'openai', api_key: '', endpoint_url: '', model_name: '', capability: activeTab });
+      await loadData();
     } catch (err) {
       console.error(err);
       setError('Failed to add key.');
@@ -55,21 +54,8 @@ const Settings = () => {
 
   const handleRemoveKey = async (indexToRemove) => {
     try {
-      const filteredConfigs = poolConfigs.filter((_, i) => i !== indexToRemove);
-      const updatedPool = poolConfigs.map((cfg, i) => {
-        // since we mask keys, we can't save them back as masked. 
-        // Wait, the API receives `masked_key`. So saving back the pool might fail if we don't have the original keys?
-        // Actually, the backend `store_provider_pool` requires the real keys.
-        // If we fetch them, they are masked. We cannot send masked keys back!
-        // This is a known issue if the backend only sends masked keys. 
-        // For this task, we will just pass the filtered list back. 
-        // NOTE: The `store_provider_pool` might not handle masked keys correctly unless backend supports it.
-        // We'll pass the ones we keep.
-        return cfg;
-      }).filter((_, i) => i !== indexToRemove);
-      
-      await storePoolSettings({ pool: updatedPool });
-      setPoolConfigs(updatedPool);
+      await deletePoolKey(indexToRemove);
+      await loadData();
     } catch (err) {
       console.error(err);
       setError('Failed to remove key.');

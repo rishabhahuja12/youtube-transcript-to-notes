@@ -526,11 +526,11 @@ async def get_settings_pool() -> List[Dict[str, str]]:
 
 
 @app.post("/settings/pool")
-async def store_settings_pool(req: PoolStoreRequest) -> Dict[str, bool]:
-    """Store a new provider pool configuration.
+async def add_settings_pool_key(req: dict) -> Dict[str, bool]:
+    """Add a new provider key to the pool.
     
     Args:
-        req: Request containing the pool data.
+        req: Dictionary containing the new key details.
         
     Returns:
         Dict[str, bool]: Success status.
@@ -538,13 +538,48 @@ async def store_settings_pool(req: PoolStoreRequest) -> Dict[str, bool]:
     try:
         if SCRIPT_DIR not in sys.path:
             sys.path.append(SCRIPT_DIR)
-        from src.credentials import store_provider_pool
-        pool_json = json.dumps(req.pool)
-        success = store_provider_pool(pool_json)
+        from src.credentials import get_provider_pool_or_legacy, store_provider_pool
+        from src.provider_pool import ProviderConfig
+        pool = get_provider_pool_or_legacy()
+        # Ensure we add it as a ProviderConfig
+        cfg = ProviderConfig(
+            provider=req.get("provider", "openai"),
+            endpoint_url=req.get("endpoint_url", ""),
+            api_key=req.get("api_key", ""),
+            model_name=req.get("model_name", ""),
+            capability=req.get("capability", "text")
+        )
+        pool.configs.append(cfg)
+        success = store_provider_pool(pool.to_json())
         return {"success": success}
     except Exception as exc:
-        logging.error(f"Error storing pool: {exc}")
-        raise HTTPException(status_code=500, detail=f"Error storing pool: {exc}") from exc
+        logging.error(f"Error adding to pool: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error adding to pool: {exc}") from exc
+
+
+@app.delete("/settings/pool/{index}")
+async def delete_settings_pool_key(index: int) -> Dict[str, bool]:
+    """Delete a key from the provider pool by index.
+    
+    Args:
+        index: The index of the config to remove.
+        
+    Returns:
+        Dict[str, bool]: Success status.
+    """
+    try:
+        if SCRIPT_DIR not in sys.path:
+            sys.path.append(SCRIPT_DIR)
+        from src.credentials import get_provider_pool_or_legacy, store_provider_pool
+        pool = get_provider_pool_or_legacy()
+        if 0 <= index < len(pool.configs):
+            pool.configs.pop(index)
+            success = store_provider_pool(pool.to_json())
+            return {"success": success}
+        return {"success": False}
+    except Exception as exc:
+        logging.error(f"Error deleting from pool: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error deleting from pool: {exc}") from exc
 
 
 @app.get("/settings/health", response_model=HealthStatus)

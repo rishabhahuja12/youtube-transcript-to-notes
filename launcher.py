@@ -11,8 +11,11 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.append(SCRIPT_DIR)
 
-def start_backend():
-    """Start the FastAPI gateway on port 8000."""
+def start_backend() -> None:
+    """Start the FastAPI gateway on port 8000.
+    
+    This function configures and runs the Uvicorn server for the main API gateway.
+    """
     # Note: Uvicorn doesn't play well when run programmatically without import strings 
     # if there are multiple workers, but for a simple desktop app, it's fine.
     config = uvicorn.Config(
@@ -25,8 +28,14 @@ def start_backend():
     server = uvicorn.Server(config)
     server.run()
 
-def start_services():
-    """Start all backend services."""
+def start_services() -> list:
+    """Start all backend services.
+    
+    This function spawns the microservices using subprocess.Popen.
+    
+    Returns:
+        list: A list of Popen subprocess objects.
+    """
     # Since the gateway routes to 8001, 8002, 8003, we should ideally start them too.
     # The prompt says: "Starts all 4 microservices + opens pywebview window"
     # But usually `launcher.py` might use subprocesses for the other microservices.
@@ -42,10 +51,15 @@ def start_services():
     
     for svc in services:
         p = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", svc["module"], "--host", "127.0.0.1", "--port", str(svc["port"])],
+            [
+                sys.executable, "-m", "uvicorn", svc["module"], 
+                "--host", "127.0.0.1", "--port", str(svc["port"])
+            ],
             cwd=SCRIPT_DIR,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            errors="replace"
         )
         processes.append(p)
         
@@ -55,7 +69,11 @@ def start_services():
     
     return processes
 
-def main():
+def main() -> None:
+    """Launch the yt_transcriptor application.
+    
+    Parses arguments, starts backend services, and opens the pywebview window.
+    """
     parser = argparse.ArgumentParser(description="Launch yt_transcriptor")
     parser.add_argument("--dev", action="store_true", help="Run in dev mode (no pywebview)")
     args = parser.parse_args()
