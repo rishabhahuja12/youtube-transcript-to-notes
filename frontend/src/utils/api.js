@@ -119,6 +119,25 @@ export const fetchOllamaStatus = async () => {
   return await response.json();
 };
 
+export const fetchPoolSettings = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/pool`, {
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const storePoolSettings = async (payload) => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/pool`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
 export const chatWithCourse = async (id, message, model = 'llama3') => {
   const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
     method: 'POST',

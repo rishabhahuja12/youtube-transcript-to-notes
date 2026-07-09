@@ -4,6 +4,8 @@ import FooterDock from './components/FooterDock';
 import Library from './pages/Library';
 import NewPipeline from './pages/NewPipeline';
 import CourseWorkspace from './pages/CourseWorkspace';
+import Settings from './pages/Settings';
+import Utilities from './pages/Utilities';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { ErrorBoundary } from 'react-error-boundary';
 
@@ -20,6 +22,10 @@ const MainContent = () => {
         return <NewPipeline />;
       case 'courseWorkspace':
         return <CourseWorkspace />;
+      case 'settings':
+        return <Settings />;
+      case 'utilities':
+        return <Utilities />;
       default:
         return (
           <div className="glass-card placeholder-view">

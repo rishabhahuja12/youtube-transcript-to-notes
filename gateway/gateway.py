@@ -1,8 +1,11 @@
 import asyncio
 import httpx
 import logging
+import os
 from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -30,15 +33,7 @@ async def shutdown_event() -> None:
     await client.aclose()
 
 async def proxy_request(request: Request, target_url: str) -> Response:
-    """Forward an HTTP request to the designated target microservice URL.
-    
-    Args:
-        request: The incoming FastAPI request.
-        target_url: The destination URL to forward to.
-        
-    Returns:
-        Response: The HTTP response from the target microservice.
-    """
+    """Forward an HTTP request to the designated target microservice URL."""
     url = httpx.URL(target_url, query=request.url.query.encode("utf-8"))
     
     # Read the request body
@@ -65,92 +60,32 @@ async def proxy_request(request: Request, target_url: str) -> Response:
 
 @app.api_route("/api/content/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_content(request: Request, path: str) -> Response:
-    """Proxy content service requests to port 8003.
-    
-    Args:
-        request: The FastAPI request.
-        path: The trailing path parameters.
-        
-    Returns:
-        Response: The proxy response.
-    """
     return await proxy_request(request, f"http://localhost:8003/content/{path}")
 
 @app.api_route("/api/settings/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_settings(request: Request, path: str) -> Response:
-    """Proxy settings requests to port 8003.
-    
-    Args:
-        request: The FastAPI request.
-        path: The trailing path parameters.
-        
-    Returns:
-        Response: The proxy response.
-    """
     return await proxy_request(request, f"http://localhost:8003/settings/{path}")
     
 @app.api_route("/api/pdf/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_pdf(request: Request, path: str) -> Response:
-    """Proxy pdf requests to port 8003.
-    
-    Args:
-        request: The FastAPI request.
-        path: The trailing path parameters.
-        
-    Returns:
-        Response: The proxy response.
-    """
     return await proxy_request(request, f"http://localhost:8003/pdf/{path}")
 
 @app.api_route("/api/chat/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_chat(request: Request, path: str) -> Response:
-    """Proxy chat requests to port 8002.
-    
-    Args:
-        request: The FastAPI request.
-        path: The trailing path parameters.
-        
-    Returns:
-        Response: The proxy response.
-    """
     return await proxy_request(request, f"http://localhost:8002/chat/{path}")
 
 @app.api_route("/api/pipeline/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_pipeline(request: Request, path: str) -> Response:
-    """Proxy pipeline requests to port 8001.
-    
-    Args:
-        request: The FastAPI request.
-        path: The trailing path parameters.
-        
-    Returns:
-        Response: The proxy response.
-    """
     return await proxy_request(request, f"http://localhost:8001/pipeline/{path}")
 
 @app.api_route("/static/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_static(request: Request, path: str) -> Response:
-    """Proxy static file requests to port 8003.
-    
-    Args:
-        request: The FastAPI request.
-        path: The trailing path parameters.
-        
-    Returns:
-        Response: The proxy response.
-    """
     return await proxy_request(request, f"http://localhost:8003/static/{path}")
 
 @app.websocket("/ws/pipeline")
 async def websocket_pipeline(websocket: WebSocket) -> None:
-    """Proxy WebSocket connections to the pipeline service at port 8001.
-    
-    Args:
-        websocket: The FastAPI websocket connection.
-    """
     await websocket.accept()
     try:
-        # Proxy to the pipeline service websocket endpoint
         async with websockets.connect("ws://localhost:8001/pipeline/stream") as target_ws:
             async def forward_to_client():
                 try:
@@ -181,3 +116,19 @@ async def websocket_pipeline(websocket: WebSocket) -> None:
     except Exception as e:
         logging.error(f"WebSocket connection failed: {e}")
         await websocket.close(code=1011, reason=str(e))
+
+# Mount React static files in production
+FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        # Serve index.html for all unrecognized paths to support client-side routing
+        index_file = os.path.join(FRONTEND_DIST, "index.html")
+        file_path = os.path.join(FRONTEND_DIST, full_path)
+        
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(index_file)
