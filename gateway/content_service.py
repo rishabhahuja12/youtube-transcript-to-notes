@@ -210,16 +210,16 @@ def _check_playwright() -> bool:
 
 
 def _check_keyring() -> bool:
-    """Check if keyring has stored credentials.
+    """Check if keyring secure storage is available and functional.
 
     Returns:
-        True if credentials are stored in keyring.
+        True if keyring is installed and working.
     """
     try:
         if SCRIPT_DIR not in sys.path:
             sys.path.append(SCRIPT_DIR)
-        from src.credentials import has_stored_credentials
-        return has_stored_credentials()
+        from src.credentials import is_keyring_available
+        return is_keyring_available()
     except Exception:
         return False
 
