@@ -114,7 +114,32 @@ def pipeline_worker(request: PipelineStartRequest, pool: ProviderPool, loop: asy
         on_log = get_on_log_callback(loop)
         on_progress = get_on_progress_callback(loop)
         
-        if request.is_url_pipeline:
+        if request.is_url_pipeline and request.youtube_url:
+            # Fetch transcript and chapters from YouTube first
+            on_log("Fetching YouTube data...")
+            from src.youtube import extract_from_url
+            yt_data = extract_from_url(request.youtube_url, on_log=on_log)
+            
+            transcript_blocks = yt_data['transcript_blocks']
+            chapters = yt_data['chapters']
+            video_title = request.video_title or yt_data.get('metadata', {}).get('title', 'Course')
+            
+            on_log(f"Got {len(transcript_blocks)} transcript blocks and {len(chapters)} chapters")
+            
+            result = run_pipeline_from_data(
+                transcript_blocks=transcript_blocks,
+                chapters=chapters,
+                output_dir=request.output_dir,
+                pool=pool,
+                cancel_event=cancel_event,
+                on_log=on_log,
+                on_progress=on_progress,
+                video_title=video_title,
+                enable_multimodal=request.enable_multimodal,
+                youtube_url=request.youtube_url,
+                enable_kag=request.enable_kag
+            )
+        elif request.is_url_pipeline:
             result = run_pipeline_from_data(
                 transcript_blocks=request.transcript_blocks,
                 chapters=request.chapters,
