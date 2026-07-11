@@ -79,6 +79,7 @@ const NewPipeline = () => {
           if (wsConnection) wsConnection.close();
           setPipelineStatus('error');
           addLog(`Pipeline error: ${msg.message}`, 'error');
+          setError(err => err || msg.message);
         }
       });
       
@@ -214,19 +215,24 @@ const NewPipeline = () => {
 
           <div className="pipeline-button-row">
             {error && (
-               <div className="status-alert error" style={{marginBottom: '10px'}}>
+               <div className={`status-alert ${error.includes("retry") ? "warning" : "error"}`} style={{marginBottom: '10px'}}>
                   {error}
                   {error.includes("Connect YouTube") && (
-                     <button onClick={() => setCurrentScreen('settings')} style={{marginLeft: '10px', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer'}}>
+                     <button type="button" onClick={() => setCurrentScreen('settings')} style={{marginLeft: '10px', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer'}}>
                         Go to Settings
+                     </button>
+                  )}
+                  {error.includes("retry") && (
+                     <button type="button" onClick={handleSubmit} style={{marginLeft: '10px', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer'}}>
+                        Retry
                      </button>
                   )}
                </div>
             )}
             <button type="submit" form="pipeline-form" className="primary-button start-pipeline-button" 
-               disabled={isSubmitting || pipelineStatus === 'running' || (inputType === 'youtube' && !youtubeStatus)}>
+               disabled={isSubmitting || pipelineStatus === 'running'}>
               <Rocket size={20} />
-              {isSubmitting || pipelineStatus === 'running' ? 'Starting pipeline...' : (inputType === 'youtube' && !youtubeStatus ? 'Connect YouTube to start' : 'Start pipeline')}
+              {isSubmitting || pipelineStatus === 'running' ? 'Starting pipeline...' : 'Start pipeline'}
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@
 customtkinter>=5.2.0
 
 # YouTube Extraction
+isodate>=0.6.1
 yt-dlp==2024.0.0
 bgutil-ytdlp-pot-provider==0.1.0
 google-auth-oauthlib==1.2.0

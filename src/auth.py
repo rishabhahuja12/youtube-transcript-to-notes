@@ -60,7 +60,9 @@ def get_video_metadata(video_id: str, creds: Any) -> Dict[str, Any]:
     item = resp['items'][0]
     title = item['snippet']['title']
     channel = item['snippet']['channelTitle']
-    duration = item['contentDetails']['duration']  
+    import isodate
+    duration_str = item['contentDetails']['duration']
+    duration = int(isodate.parse_duration(duration_str).total_seconds())
     description = item['snippet']['description']
     
     return {
