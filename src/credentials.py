@@ -82,47 +82,6 @@ def delete_credential(key: str) -> bool:
         return False
 
 
-def store_all_credentials(provider: str, endpoint_url: str, api_key: str, model_name: str) -> bool:
-    """Store all LLM credentials at once."""
-    results = [
-        store_credential(KEY_PROVIDER, provider),
-        store_credential(KEY_ENDPOINT_URL, endpoint_url),
-        store_credential(KEY_API_KEY, api_key),
-        store_credential(KEY_MODEL_NAME, model_name),
-    ]
-    return all(results)
-
-
-def get_all_credentials() -> dict:
-    """Retrieve all stored LLM credentials.
-    Returns dict with keys: provider, endpoint_url, api_key, model_name.
-    Values are empty strings if not found."""
-    return {
-        "provider": get_credential(KEY_PROVIDER),
-        "endpoint_url": get_credential(KEY_ENDPOINT_URL),
-        "api_key": get_credential(KEY_API_KEY),
-        "model_name": get_credential(KEY_MODEL_NAME),
-    }
-
-
-def has_stored_credentials() -> bool:
-    """Check if any credentials are stored."""
-    creds = get_all_credentials()
-    return bool(creds["endpoint_url"] and creds["model_name"])
-
-
-def get_llm_config_from_keyring() -> tuple:
-    """Get LLM config from keyring, matching the signature of config.get_llm_config.
-    Returns (provider, endpoint_url, api_key, model_name)."""
-    creds = get_all_credentials()
-    return (
-        creds["provider"] or "Groq",
-        creds["endpoint_url"],
-        creds["api_key"],
-        creds["model_name"],
-    )
-
-
 def store_provider_pool(pool_json: str) -> bool:
     """Store the serialized pool JSON in keyring."""
     return store_credential(KEY_PROVIDER_POOL, pool_json)
@@ -134,27 +93,13 @@ def get_provider_pool() -> str:
 
 
 def get_provider_pool_or_legacy() -> "ProviderPool":
-    """Try loading the pool first. If empty, fall back to legacy single-config.
-    Returns ProviderPool."""
-    import os
+    """Load the provider pool from keyring.
+    Returns an empty ProviderPool if nothing is stored."""
     from src.provider_pool import ProviderPool
-    from src.config import get_llm_config
-    
+
     pool_json = get_provider_pool()
     if pool_json:
-        pool = ProviderPool.from_json(pool_json)
-        # Return the pool even if empty — this means the user
-        # intentionally deleted all keys and we shouldn't
-        # fall back to legacy anymore.
-        return pool
-    
-    # First-time fallback: migrate legacy key into the pool system
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    env_path = os.path.join(script_dir, ".env")
-    prov, ep, key, mod = get_llm_config(env_path)
-    pool = ProviderPool.from_legacy(prov, ep, key, mod)
-    # Persist the migrated pool so future calls don't
-    # re-inject the legacy key after the user deletes it.
-    if pool.total > 0:
-        store_provider_pool(pool.to_json())
-    return pool
+        return ProviderPool.from_json(pool_json)
+
+    return ProviderPool([])
+
