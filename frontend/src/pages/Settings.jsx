@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey, fetchYouTubeStatus, connectYouTube, disconnectYouTube } from '../utils/api';
-import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, Youtube } from 'lucide-react';
+import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, PlayCircle } from 'lucide-react';
 import './Settings.css';
 
 const Settings = () => {
@@ -133,7 +133,7 @@ const Settings = () => {
 
       <section>
         <h2>
-          <Youtube size={24} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+          <PlayCircle size={24} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
           YouTube Connection
         </h2>
         <div className="health-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
