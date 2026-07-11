@@ -192,3 +192,29 @@ export const installPlaywright = async () => {
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
+
+export const fetchYouTubeStatus = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/youtube/status`, {
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const connectYouTube = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/youtube/connect`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(300000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const disconnectYouTube = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/youtube/disconnect`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};

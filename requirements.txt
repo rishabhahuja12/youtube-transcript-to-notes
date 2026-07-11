@@ -2,8 +2,10 @@
 customtkinter>=5.2.0
 
 # YouTube Extraction
-youtube-transcript-api>=0.6.0
 yt-dlp>=2024.0.0
+bgutil-ytdlp-pot-provider>=0.1.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.115.0
 opencv-python>=4.8.0
 
 # Web Server

@@ -62,6 +62,11 @@ const NewPipeline = () => {
       const wsConnection = connectPipelineWebSocket((msg) => {
         if (msg.type === 'log') {
           addLog(msg.message, msg.level || 'info');
+          if (msg.message.includes('No Google OAuth credentials found') && inputType === 'youtube') {
+            setError("Connect YouTube in Settings for better results. Metadata might be limited.");
+          } else if (msg.message.includes('Transcript failed')) {
+             setError(youtubeStatus ? "Metadata ready, transcript unavailable — retry" : "Transcript and Metadata unavailable. Connect YouTube in Settings.");
+          }
         } else if (msg.type === 'progress') {
           setPipelineProgress({ current: msg.current, total: msg.total });
         } else if (msg.type === 'complete') {
@@ -87,6 +92,13 @@ const NewPipeline = () => {
       setIsSubmitting(false);
     }
   };
+
+  const [youtubeStatus, setYoutubeStatus] = React.useState(false);
+  React.useEffect(() => {
+    import('../utils/api').then(({fetchYouTubeStatus}) => {
+      fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
+    });
+  }, []);
 
   return (
     <div className="new-pipeline-page fade-in">
@@ -201,9 +213,20 @@ const NewPipeline = () => {
           </div>
 
           <div className="pipeline-button-row">
-            <button type="submit" form="pipeline-form" className="primary-button start-pipeline-button" disabled={isSubmitting || pipelineStatus === 'running'}>
+            {error && (
+               <div className="status-alert error" style={{marginBottom: '10px'}}>
+                  {error}
+                  {error.includes("Connect YouTube") && (
+                     <button onClick={() => setCurrentScreen('settings')} style={{marginLeft: '10px', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer'}}>
+                        Go to Settings
+                     </button>
+                  )}
+               </div>
+            )}
+            <button type="submit" form="pipeline-form" className="primary-button start-pipeline-button" 
+               disabled={isSubmitting || pipelineStatus === 'running' || (inputType === 'youtube' && !youtubeStatus)}>
               <Rocket size={20} />
-              {isSubmitting || pipelineStatus === 'running' ? 'Starting pipeline...' : 'Start pipeline'}
+              {isSubmitting || pipelineStatus === 'running' ? 'Starting pipeline...' : (inputType === 'youtube' && !youtubeStatus ? 'Connect YouTube to start' : 'Start pipeline')}
             </button>
           </div>
         </div>

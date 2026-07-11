@@ -63,6 +63,16 @@ def start_services() -> list:
         )
         processes.append(p)
         
+    p_pot = subprocess.Popen(
+        ["bgutil-pot", "server"],
+        cwd=SCRIPT_DIR,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        encoding="utf-8",
+        errors="replace"
+    )
+    processes.append(p_pot)
+        
     # Start the gateway in a thread so pywebview can run in the main thread
     gateway_thread = threading.Thread(target=start_backend, daemon=True)
     gateway_thread.start()

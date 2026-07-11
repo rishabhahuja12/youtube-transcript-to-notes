@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey } from '../utils/api';
-import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus } from 'lucide-react';
+import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey, fetchYouTubeStatus, connectYouTube, disconnectYouTube } from '../utils/api';
+import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, Youtube } from 'lucide-react';
 import './Settings.css';
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('text');
   const [poolConfigs, setPoolConfigs] = useState([]);
   const [healthStatus, setHealthStatus] = useState({ ollama: false, playwright: false, keyring: false });
+  const [youtubeConnected, setYoutubeConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -30,6 +31,10 @@ const Settings = () => {
         setHealthStatus(healthData);
       }).catch(console.error);
 
+      fetchYouTubeStatus().then(ytData => {
+        setYoutubeConnected(ytData.connected);
+      }).catch(console.error);
+
       const poolData = await fetchPoolSettings();
       setPoolConfigs(poolData);
       setError(null);
@@ -38,6 +43,26 @@ const Settings = () => {
       setError('Failed to load settings data.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConnectYoutube = async () => {
+    try {
+      const res = await connectYouTube();
+      setYoutubeConnected(res.connected);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to connect YouTube.');
+    }
+  };
+
+  const handleDisconnectYoutube = async () => {
+    try {
+      const res = await disconnectYouTube();
+      setYoutubeConnected(res.connected);
+    } catch (err) {
+      console.error(err);
+      setError('Failed to disconnect YouTube.');
     }
   };
 
@@ -103,6 +128,39 @@ const Settings = () => {
             icon={<Shield size={24} />}
             desc="Secure Storage"
           />
+        </div>
+      </section>
+
+      <section>
+        <h2>
+          <Youtube size={24} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+          YouTube Connection
+        </h2>
+        <div className="health-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              YouTube API
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                background: youtubeConnected ? 'var(--connected)' : '#dc3545' 
+              }}></span>
+            </h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+              Connect via Google OAuth for reliable metadata and chapters.
+            </p>
+            <p className={`health-status ${youtubeConnected ? 'success' : 'error'}`}>
+              {youtubeConnected ? 'YouTube: connected' : 'Not connected'}
+            </p>
+          </div>
+          <div>
+            {youtubeConnected ? (
+              <button onClick={handleDisconnectYoutube} className="secondary-button" style={{ borderColor: '#dc3545', color: '#dc3545' }}>Disconnect</button>
+            ) : (
+              <button onClick={handleConnectYoutube} className="primary-button">Connect your YouTube</button>
+            )}
+          </div>
         </div>
       </section>
 

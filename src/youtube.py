@@ -1,21 +1,13 @@
-"""
-YouTube data extraction for the Transcript-to-Notes pipeline.
-
-Uses youtube-transcript-api for lightweight transcript fetching and
-yt-dlp for video metadata (chapters, description, title).
-"""
 import re
 import os
-
+import yt_dlp
+from src.auth import load_credentials, get_video_metadata
 
 def extract_video_id(url: str) -> str:
-    """Extract YouTube video ID from various URL formats.
-    Supports: youtube.com/watch?v=, youtu.be/, youtube.com/embed/, etc.
-    Returns the video ID string or raises ValueError."""
-    # Handle multiple YouTube URL formats
+    """Extract YouTube video ID from various URL formats."""
     patterns = [
         r'(?:youtube\.com/watch\?.*v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([a-zA-Z0-9_-]{11})',
-        r'^([a-zA-Z0-9_-]{11})$',  # Bare video ID
+        r'^([a-zA-Z0-9_-]{11})$',
     ]
     for pattern in patterns:
         match = re.search(pattern, url.strip())
@@ -23,102 +15,69 @@ def extract_video_id(url: str) -> str:
             return match.group(1)
     raise ValueError(f"Could not extract YouTube video ID from: {url}")
 
-
-def fetch_transcript(video_id: str, language: str = 'en') -> list:
-    """Fetch transcript using youtube-transcript-api.
-    Returns list of dicts: [{text, start, duration}, ...]
-    Tries: manual en -> auto-generated en -> any available language.
-    Raises ImportError if library not installed, Exception on failure."""
-    from youtube_transcript_api import YouTubeTranscriptApi
-
-    # Determine if API is the older class-method style or newer instance-based style
-    if hasattr(YouTubeTranscriptApi, 'get_transcript'):
-        try:
-            # Try to get the requested language transcript
-            return YouTubeTranscriptApi.get_transcript(video_id, languages=[language])
-        except Exception:
-            pass
-
-        try:
-            # Fallback: try any available transcript
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            # Prefer manual transcripts
-            for t in transcript_list:
-                if not t.is_generated:
-                    return t.fetch()
-            # Fall back to auto-generated
-            for t in transcript_list:
-                if t.is_generated:
-                    return t.fetch()
-        except Exception as e:
-            raise Exception(f"Could not fetch transcript for video {video_id}: {str(e)}")
-    else:
-        # Instance-based API (v1.2.4+)
-        api = YouTubeTranscriptApi()
-        try:
-            return list(api.fetch(video_id, languages=[language]))
-        except Exception:
-            pass
-
-        try:
-            transcript_list = api.list(video_id)
-            # Prefer manual transcripts
-            for t in transcript_list:
-                if not t.is_generated:
-                    return list(t.fetch())
-            # Fall back to auto-generated
-            for t in transcript_list:
-                if t.is_generated:
-                    return list(t.fetch())
-        except Exception as e:
-            raise Exception(f"Could not fetch transcript for video {video_id}: {str(e)}")
-
-    raise Exception(f"No transcripts available for video {video_id}")
-
-
-def fetch_metadata(url: str) -> dict:
-    """Fetch video metadata using yt-dlp (no video download).
-    Returns dict with keys: title, description, uploader, duration, chapters, upload_date.
-    chapters is a list of {start_time: float, end_time: float, title: str}.
-    Raises ImportError if yt-dlp not installed."""
-    import yt_dlp
-
+def get_transcript(url: str) -> list:
     ydl_opts = {
         'skip_download': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': ['en'],
         'quiet': True,
-        'no_warnings': True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
+        subs = info.get('requested_subtitles') or info.get('automatic_captions')
+        if not subs:
+            raise Exception(f"No transcripts available for video {url}")
+        
+        # In a real implementation, you'd parse the VTT/SRT.
+        # For simplicity, returning a mock format or we can use yt_dlp's downloaded subtitles.
+        # However, to maintain the blocks format, we parse the subtitles file.
+        import requests
+        sub_url = subs.get('en', {}).get('url')
+        if not sub_url:
+            sub_url = list(subs.values())[0].get('url')
+        
+        if sub_url:
+            vtt_content = requests.get(sub_url).text
+            return parse_vtt_to_blocks(vtt_content)
+        return []
 
-    return {
-        'title': info.get('title', 'Unknown'),
-        'description': info.get('description', ''),
-        'uploader': info.get('uploader', 'Unknown'),
-        'duration': info.get('duration', 0),
-        'chapters': info.get('chapters') or [],
-        'upload_date': info.get('upload_date', ''),
-    }
-
-
-def transcript_to_blocks(transcript_entries: list) -> list:
-    """Convert youtube-transcript-api entries into our standard (start_sec, end_sec, text) blocks.
-    Input: [{text: str, start: float, duration: float}, ...]
-    Output: [(start_sec, end_sec, text), ...]"""
+def parse_vtt_to_blocks(vtt: str) -> list:
+    """Parse VTT format to blocks of (start_sec, end_sec, text)"""
     blocks = []
-    for entry in transcript_entries:
-        if isinstance(entry, dict):
-            start = int(entry['start'])
-            duration = entry.get('duration', 0)
-            text = entry['text'].strip()
-        else:
-            start = int(entry.start)
-            duration = getattr(entry, 'duration', 0)
-            text = entry.text.strip()
-            
-        end = int(start + duration)
-        if text:
-            blocks.append((start, end, text))
+    lines = vtt.split('\n')
+    current_start = 0
+    current_end = 0
+    current_text = []
+    
+    for line in lines:
+        if '-->' in line:
+            if current_text:
+                blocks.append((current_start, current_end, ' '.join(current_text).strip()))
+                current_text = []
+            parts = line.split('-->')
+            try:
+                start_str = parts[0].strip().split(':')
+                if len(start_str) == 3: # HH:MM:SS.mmm
+                    current_start = int(start_str[0])*3600 + int(start_str[1])*60 + float(start_str[2])
+                else:
+                    current_start = int(start_str[0])*60 + float(start_str[1])
+                
+                end_str = parts[1].strip().split(':')
+                if len(end_str) == 3:
+                    current_end = int(end_str[0])*3600 + int(end_str[1])*60 + float(end_str[2])
+                else:
+                    current_end = int(end_str[0])*60 + float(end_str[1])
+            except ValueError:
+                pass
+        elif line.strip() and not line.startswith('WEBVTT') and not line.startswith('Kind:') and not line.startswith('Language:'):
+            # Clean up tags like <c>...</c>
+            clean_text = re.sub(r'<[^>]+>', '', line.strip())
+            if clean_text and not clean_text.isdigit():
+                current_text.append(clean_text)
+                
+    if current_text:
+        blocks.append((current_start, current_end, ' '.join(current_text).strip()))
     return blocks
 
 
@@ -141,22 +100,12 @@ def chapters_to_outline(chapters: list) -> list:
     return result
 
 
-def auto_chunk_transcript(transcript_entries: list, chunk_minutes: int = 5) -> list:
-    """If no chapters are available, create artificial chapter boundaries
-    by splitting the transcript every N minutes.
-    Returns chapter list in standard format."""
-    if not transcript_entries:
+def auto_chunk_transcript(transcript_blocks: list, chunk_minutes: int = 5) -> list:
+    if not transcript_blocks:
         return []
 
-    last = transcript_entries[-1]
-    if isinstance(last, dict):
-        last_start = last['start']
-        last_duration = last.get('duration', 0)
-    else:
-        last_start = last.start
-        last_duration = getattr(last, 'duration', 0)
-
-    total_duration = int(last_start + last_duration)
+    last_end = transcript_blocks[-1][1]
+    total_duration = int(last_end)
     chunk_seconds = chunk_minutes * 60
     chapters = []
 
@@ -175,69 +124,63 @@ def auto_chunk_transcript(transcript_entries: list, chunk_minutes: int = 5) -> l
 
 
 def extract_from_url(url: str, on_log: callable = None) -> dict:
-    """Full extraction pipeline from a YouTube URL.
-
-    Returns dict with:
-        - transcript_blocks: list of (start_sec, end_sec, text)
-        - chapters: list of {time, title, section}
-        - metadata: {title, uploader, duration, ...}
-        - source_info: str describing what was used
-    """
     log = on_log or (lambda msg: None)
 
     video_id = extract_video_id(url)
     log(f"Extracted video ID: {video_id}")
 
-    # Step 1: Fetch metadata (chapters, title, description)
-    log("Fetching video metadata via yt-dlp...")
+    creds = load_credentials()
+    
+    metadata = None
+    if creds:
+        log("Fetching video metadata via Google OAuth...")
+        try:
+            metadata = get_video_metadata(video_id, creds)
+            log(f"Video: '{metadata['title']}' by {metadata['channel']}")
+            # parse chapters from description if needed, or we rely on yt-dlp metadata
+        except Exception as e:
+            log(f"WARNING: Could not fetch metadata via OAuth: {str(e)}")
+            metadata = None
+    else:
+        log("No Google OAuth credentials found. Prompting 'Connect YouTube'.")
+        
+    if not metadata:
+        metadata = {'title': 'Unknown', 'description': '', 'channel': 'Unknown', 'duration': 0}
+
+    # Fetch transcript
+    log("Fetching transcript via yt-dlp...")
     try:
-        sanitized_url = f"https://www.youtube.com/watch?v={video_id}"
-        metadata = fetch_metadata(sanitized_url)
-        log(f"Video: '{metadata['title']}' by {metadata['uploader']} ({metadata['duration'] // 60} min)")
+        transcript_blocks = get_transcript(url)
+        log(f"Fetched {len(transcript_blocks)} transcript blocks.")
+        status = "complete"
     except Exception as e:
-        log(f"WARNING: Could not fetch metadata: {str(e)}")
-        metadata = {'title': 'Unknown', 'description': '', 'uploader': 'Unknown', 'duration': 0, 'chapters': [], 'upload_date': ''}
+        log(f"WARNING: Transcript failed: {str(e)}")
+        transcript_blocks = []
+        status = "transcript_failed"
 
-    # Step 2: Fetch transcript
-    log("Fetching transcript via youtube-transcript-api...")
-    transcript_entries = fetch_transcript(video_id)
-    log(f"Fetched {len(transcript_entries)} transcript entries.")
-
-    transcript_blocks = transcript_to_blocks(transcript_entries)
-
-    # Step 3: Get chapters (yt-dlp metadata -> description parsing -> auto-chunk)
     chapters = []
     source_info = ""
 
-    if metadata['chapters']:
-        chapters = chapters_to_outline(metadata['chapters'])
-        source_info = f"Extracted {len(chapters)} chapters from YouTube chapter markers."
-        log(source_info)
-    else:
-        log("No YouTube chapter markers found.")
-        # Try parsing description for timestamps
-        from src.parser import parse_outline_text
-        if metadata['description']:
-            log("Attempting to parse chapters from video description...")
-            parsed_chapters, warnings = parse_outline_text(metadata['description'])
-            if len(parsed_chapters) >= 2:
-                chapters = parsed_chapters
-                source_info = f"Parsed {len(chapters)} chapters from video description."
-                log(source_info)
-                for w in warnings:
-                    log(f"  Warning: {w}")
-            else:
-                log("Description did not contain enough timestamps.")
-
-        if not chapters:
-            # Auto-chunk as last resort
-            chapters = auto_chunk_transcript(transcript_entries, chunk_minutes=5)
-            source_info = f"Auto-chunked transcript into {len(chapters)} parts (every 5 minutes)."
+    from src.parser import parse_outline_text
+    if metadata.get('description'):
+        log("Attempting to parse chapters from video description...")
+        parsed_chapters, warnings = parse_outline_text(metadata['description'])
+        if len(parsed_chapters) >= 2:
+            chapters = parsed_chapters
+            source_info = f"Parsed {len(chapters)} chapters from video description."
             log(source_info)
+        else:
+            log("Description did not contain enough timestamps.")
+
+    if not chapters:
+        chapters = auto_chunk_transcript(transcript_blocks, chunk_minutes=5)
+        source_info = f"Auto-chunked transcript into {len(chapters)} parts (every 5 minutes)."
+        log(source_info)
 
     return {
         'transcript_blocks': transcript_blocks,
         'chapters': chapters,
         'metadata': metadata,
         'source_info': source_info,
+        'status': status
     }

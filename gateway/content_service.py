@@ -597,6 +597,28 @@ async def get_settings_health() -> HealthStatus:
         keyring=_check_keyring(),
     )
 
+@app.get("/settings/youtube/status")
+async def get_youtube_status():
+    from src.auth import load_credentials
+    creds = load_credentials()
+    return {"connected": creds is not None and not (creds.expired and not creds.refresh_token)}
+
+@app.post("/settings/youtube/connect")
+async def connect_youtube_endpoint():
+    from src.auth import connect_youtube
+    try:
+        creds = connect_youtube()
+        return {"connected": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/settings/youtube/disconnect")
+async def disconnect_youtube_endpoint():
+    path = os.path.expanduser('~/.studysuite/yt_token.pickle')
+    if os.path.exists(path):
+        os.remove(path)
+    return {"connected": False}
+
 # ═══════════════════════════════════════════════════════════════════════
 #  PDF Endpoints
 # ═══════════════════════════════════════════════════════════════════════
