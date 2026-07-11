@@ -67,15 +67,18 @@ def start_services() -> list:
     if not bgutil_cmd:
         bgutil_cmd = "bgutil-pot.exe" if sys.platform == "win32" else "bgutil-pot"
 
-    p_pot = subprocess.Popen(
-        [bgutil_cmd, "server"],
-        cwd=SCRIPT_DIR,
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-        encoding="utf-8",
-        errors="replace"
-    )
-    processes.append(p_pot)
+    try:
+        p_pot = subprocess.Popen(
+            [bgutil_cmd or "bgutil-pot", "server"],
+            cwd=SCRIPT_DIR,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            encoding="utf-8",
+            errors="replace"
+        )
+        processes.append(p_pot)
+    except FileNotFoundError:
+        print("WARNING: bgutil-pot server binary not found. PO Token provider will not be active.")
         
     # Start the gateway in a thread so pywebview can run in the main thread
     gateway_thread = threading.Thread(target=start_backend, daemon=True)
