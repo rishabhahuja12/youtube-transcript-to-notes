@@ -63,8 +63,13 @@ def start_services() -> list:
         )
         processes.append(p)
         
+    import shutil
+    bgutil_cmd = shutil.which("bgutil-pot")
+    if not bgutil_cmd:
+        bgutil_cmd = "bgutil-pot.exe" if sys.platform == "win32" else "bgutil-pot"
+
     p_pot = subprocess.Popen(
-        ["bgutil-pot", "server"],
+        [bgutil_cmd, "server"],
         cwd=SCRIPT_DIR,
         stdout=sys.stdout,
         stderr=sys.stderr,

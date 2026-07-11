@@ -6,7 +6,8 @@ from src.auth import load_credentials, get_video_metadata
 def extract_video_id(url: str) -> str:
     """Extract YouTube video ID from various URL formats."""
     patterns = [
-        r'(?:youtube\.com/watch\?.*v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)([a-zA-Z0-9_-]{11})',
+        r'(?:youtube\.com/watch\?.*v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)'
+        r'([a-zA-Z0-9_-]{11})',
         r'^([a-zA-Z0-9_-]{11})$',
     ]
     for pattern in patterns:
@@ -16,6 +17,17 @@ def extract_video_id(url: str) -> str:
     raise ValueError(f"Could not extract YouTube video ID from: {url}")
 
 def get_transcript(url: str) -> list:
+    """Fetch and parse subtitles from a YouTube video.
+    
+    Args:
+        url (str): The YouTube video URL.
+        
+    Returns:
+        list: A list of transcript blocks, each containing (start_sec, end_sec, text).
+        
+    Raises:
+        Exception: If no transcripts are available.
+    """
     ydl_opts = {
         'skip_download': True,
         'writesubtitles': True,
@@ -32,13 +44,13 @@ def get_transcript(url: str) -> list:
         # In a real implementation, you'd parse the VTT/SRT.
         # For simplicity, returning a mock format or we can use yt_dlp's downloaded subtitles.
         # However, to maintain the blocks format, we parse the subtitles file.
-        import requests
+        import httpx
         sub_url = subs.get('en', {}).get('url')
         if not sub_url:
             sub_url = list(subs.values())[0].get('url')
         
         if sub_url:
-            vtt_content = requests.get(sub_url).text
+            vtt_content = httpx.get(sub_url).text
             return parse_vtt_to_blocks(vtt_content)
         return []
 
@@ -59,7 +71,8 @@ def parse_vtt_to_blocks(vtt: str) -> list:
             try:
                 start_str = parts[0].strip().split(':')
                 if len(start_str) == 3: # HH:MM:SS.mmm
-                    current_start = int(start_str[0])*3600 + int(start_str[1])*60 + float(start_str[2])
+                    current_start = (int(start_str[0])*3600 + 
+                                     int(start_str[1])*60 + float(start_str[2]))
                 else:
                     current_start = int(start_str[0])*60 + float(start_str[1])
                 
@@ -70,7 +83,8 @@ def parse_vtt_to_blocks(vtt: str) -> list:
                     current_end = int(end_str[0])*60 + float(end_str[1])
             except ValueError:
                 pass
-        elif line.strip() and not line.startswith('WEBVTT') and not line.startswith('Kind:') and not line.startswith('Language:'):
+        elif (line.strip() and not line.startswith('WEBVTT') and 
+              not line.startswith('Kind:') and not line.startswith('Language:')):
             # Clean up tags like <c>...</c>
             clean_text = re.sub(r'<[^>]+>', '', line.strip())
             if clean_text and not clean_text.isdigit():
@@ -101,6 +115,15 @@ def chapters_to_outline(chapters: list) -> list:
 
 
 def auto_chunk_transcript(transcript_blocks: list, chunk_minutes: int = 5) -> list:
+    """Automatically chunk a transcript into equal time segments.
+    
+    Args:
+        transcript_blocks (list): List of transcript blocks.
+        chunk_minutes (int, optional): Duration of each chunk in minutes. Defaults to 5.
+        
+    Returns:
+        list: List of chapter dictionaries with time, title, and section.
+    """
     if not transcript_blocks:
         return []
 
@@ -124,6 +147,15 @@ def auto_chunk_transcript(transcript_blocks: list, chunk_minutes: int = 5) -> li
 
 
 def extract_from_url(url: str, on_log: callable = None) -> dict:
+    """Extract metadata, transcript, and chapters from a YouTube URL.
+    
+    Args:
+        url (str): The YouTube video URL.
+        on_log (callable, optional): Callback function for logging messages. Defaults to None.
+        
+    Returns:
+        dict: Dictionary containing transcript_blocks, chapters, metadata, source_info, and status.
+    """
     log = on_log or (lambda msg: None)
 
     video_id = extract_video_id(url)
