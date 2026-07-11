@@ -37,6 +37,8 @@ export const AppProvider = ({ children }) => {
       }
     };
     checkStatus();
+    const interval = setInterval(checkStatus, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const addLog = (message, type = 'info') => {

@@ -143,11 +143,18 @@ def get_provider_pool_or_legacy() -> "ProviderPool":
     pool_json = get_provider_pool()
     if pool_json:
         pool = ProviderPool.from_json(pool_json)
-        if pool.total > 0:
-            return pool
+        # Return the pool even if empty — this means the user
+        # intentionally deleted all keys and we shouldn't
+        # fall back to legacy anymore.
+        return pool
     
-    # Fallback to legacy (keyring then .env via get_llm_config)
+    # First-time fallback: migrate legacy key into the pool system
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     env_path = os.path.join(script_dir, ".env")
     prov, ep, key, mod = get_llm_config(env_path)
-    return ProviderPool.from_legacy(prov, ep, key, mod)
+    pool = ProviderPool.from_legacy(prov, ep, key, mod)
+    # Persist the migrated pool so future calls don't
+    # re-inject the legacy key after the user deletes it.
+    if pool.total > 0:
+        store_provider_pool(pool.to_json())
+    return pool
