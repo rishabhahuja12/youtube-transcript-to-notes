@@ -13,7 +13,7 @@ def connect_youtube() -> Any:
     Returns:
         Any: Google OAuth credentials object.
     """
-    secret_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'client_secret.json')
+    secret_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'client_secret.json')
     flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
     creds = flow.run_local_server(port=0)
     

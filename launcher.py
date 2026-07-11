@@ -1,10 +1,13 @@
 import os
 import sys
 import threading
-import uvicorn
-import webview
 import time
 import argparse
+import subprocess
+import shutil
+
+import uvicorn
+import webview
 
 # Path resolution
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,9 +41,6 @@ def start_services() -> list:
     """
     # Since the gateway routes to 8001, 8002, 8003, we should ideally start them too.
     # The prompt says: "Starts all 4 microservices + opens pywebview window"
-    # But usually `launcher.py` might use subprocesses for the other microservices.
-    import subprocess
-    
     services = [
         {"port": 8001, "module": "gateway.pipeline_service:app"},
         {"port": 8002, "module": "gateway.chat_service:app"},
@@ -63,7 +63,6 @@ def start_services() -> list:
         )
         processes.append(p)
         
-    import shutil
     bgutil_cmd = shutil.which("bgutil-pot")
     if not bgutil_cmd:
         bgutil_cmd = "bgutil-pot.exe" if sys.platform == "win32" else "bgutil-pot"

@@ -4,7 +4,14 @@ import yt_dlp
 from src.auth import load_credentials, get_video_metadata
 
 def extract_video_id(url: str) -> str:
-    """Extract YouTube video ID from various URL formats."""
+    """Extract YouTube video ID from various URL formats.
+    
+    Args:
+        url (str): The YouTube URL.
+        
+    Returns:
+        str: The extracted video ID.
+    """
     patterns = [
         r'(?:youtube\.com/watch\?.*v=|youtu\.be/|youtube\.com/embed/|youtube\.com/v/)'
         r'([a-zA-Z0-9_-]{11})',
@@ -55,7 +62,14 @@ def get_transcript(url: str) -> list:
         return []
 
 def parse_vtt_to_blocks(vtt: str) -> list:
-    """Parse VTT format to blocks of (start_sec, end_sec, text)"""
+    """Parse VTT format to blocks of (start_sec, end_sec, text).
+    
+    Args:
+        vtt (str): The VTT file content as a string.
+        
+    Returns:
+        list: A list of parsed transcript blocks.
+    """
     blocks = []
     lines = vtt.split('\n')
     current_start = 0
@@ -97,8 +111,13 @@ def parse_vtt_to_blocks(vtt: str) -> list:
 
 def chapters_to_outline(chapters: list) -> list:
     """Convert yt-dlp chapter format to our standard chapter format.
-    Input: [{start_time: float, end_time: float, title: str}, ...]
-    Output: [{time: str, title: str, section: str}, ...] (H:MM:SS format)"""
+    
+    Args:
+        chapters (list): A list of chapter dictionaries from yt-dlp.
+        
+    Returns:
+        list: A list of standard outline dictionaries.
+    """
     result = []
     for ch in chapters:
         seconds = int(ch['start_time'])
