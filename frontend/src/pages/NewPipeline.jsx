@@ -59,9 +59,6 @@ const NewPipeline = () => {
         enable_kag: powerUps.kag || false
       };
       
-      await startPipeline(payload);
-      setPipelineStatus('running');
-      
       const wsConnection = connectPipelineWebSocket((msg) => {
         if (msg.type === 'log') {
           addLog(msg.message, msg.level || 'info');
@@ -79,6 +76,9 @@ const NewPipeline = () => {
           addLog(`Pipeline error: ${msg.message}`, 'error');
         }
       });
+      
+      await startPipeline(payload);
+      setPipelineStatus('running');
       
       
     } catch (err) {
