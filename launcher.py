@@ -56,8 +56,8 @@ def start_services() -> list:
                 "--host", "127.0.0.1", "--port", str(svc["port"])
             ],
             cwd=SCRIPT_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
             encoding="utf-8",
             errors="replace"
         )
