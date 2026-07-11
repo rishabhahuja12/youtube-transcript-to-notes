@@ -154,7 +154,7 @@ const CourseWorkspace = () => {
       const res = await chatWithCourse(activeCourseDir.id, userMessage, selectedModel);
       setChatMessages(prev => [...prev, { text: res.response, isUser: false }]);
     } catch (error) {
-      setChatMessages(prev => [...prev, { text: 'Error connecting to chat service.', isUser: false, isError: true }]);
+      setChatMessages(prev => [...prev, { text: error.message || 'Error connecting to chat service.', isUser: false, isError: true }]);
     } finally {
       setChatLoading(false);
     }

@@ -87,7 +87,7 @@ async def route_pipeline(request: Request, path: str) -> Response:
 async def route_static(request: Request, path: str) -> Response:
     return await proxy_request(request, f"http://localhost:8003/static/{path}")
 
-@app.websocket("/ws/pipeline")
+@app.websocket("/api/pipeline/stream")
 async def websocket_pipeline(websocket: WebSocket) -> None:
     await websocket.accept()
     try:

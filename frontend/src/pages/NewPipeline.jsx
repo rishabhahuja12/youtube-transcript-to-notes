@@ -48,11 +48,15 @@ const NewPipeline = () => {
       setIsSubmitting(true);
       setError(null);
       
+      const isYoutube = inputType === 'youtube';
       const payload = {
-        url,
-        topic,
-        outputDir,
-        powerUps
+        output_dir: outputDir || "output",
+        youtube_url: isYoutube ? url : "",
+        transcript_path: !isYoutube ? url : "",
+        is_url_pipeline: isYoutube,
+        video_title: topic || "Course",
+        enable_multimodal: powerUps.vision || false,
+        enable_kag: powerUps.kag || false
       };
       
       await startPipeline(payload);

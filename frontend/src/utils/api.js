@@ -154,7 +154,14 @@ export const chatWithCourse = async (id, message, model = 'llama3') => {
     body: JSON.stringify({ course_id: id, message, model }),
     signal: AbortSignal.timeout(60000)
   });
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  if (!response.ok) {
+    let errMsg = `HTTP error! status: ${response.status}`;
+    try {
+      const errData = await response.json();
+      errMsg = errData.detail || errData.message || errMsg;
+    } catch (e) {}
+    throw new Error(errMsg);
+  }
   return await response.json();
 };
 

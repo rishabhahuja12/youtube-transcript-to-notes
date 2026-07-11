@@ -321,6 +321,12 @@ def call_ollama_chat(model: str, messages: list) -> str:
         with urllib.request.urlopen(req, timeout=LLM_TIMEOUT_SECONDS) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             return res_data.get("message", {}).get("content", "")
+    except urllib.error.HTTPError as e:
+        try:
+            error_body = e.read().decode("utf-8")
+        except Exception:
+            error_body = str(e)
+        raise ConnectionError(f"Ollama returned {e.code}: {error_body}") from e
     except urllib.error.URLError as e:
         is_refused = isinstance(e.reason, ConnectionRefusedError)
         has_refused_str = hasattr(e.reason, 'strerror') and 'refused' in str(e.reason).lower()
