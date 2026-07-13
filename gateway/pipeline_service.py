@@ -174,9 +174,12 @@ def pipeline_worker(request: PipelineStartRequest, pool: ProviderPool, loop: asy
                 enable_kag=request.enable_kag
             )
         
-        course_path = result.get("detailed_path", "")
+        course_path = result.get("course_dir") or (os.path.dirname(result.get("detailed_path", "")) if result.get("detailed_path") else "")
         success = result.get("success", False)
-        msg = {"type": "complete", "success": success, "course_path": course_path, "result": result}
+        if success and course_path and os.path.isdir(course_path):
+            from gateway.content_service import _add_recent_output
+            _add_recent_output(course_path)
+        msg = {"type": "complete", "success": success, "course_dir": course_path, "result": result}
         asyncio.run_coroutine_threadsafe(broadcast_message(msg), loop)
     except Exception as e:
         logging.error(f"Pipeline worker failed: {e}")

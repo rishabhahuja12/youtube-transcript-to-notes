@@ -126,7 +126,10 @@ def _add_recent_output(path: str) -> None:
     Args:
         path: The directory path to store.
     """
-    if not path or not os.path.isdir(path):
+    if not path:
+        return
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
         return
     data: Dict[str, Any] = {}
     try:
@@ -193,18 +196,24 @@ def _check_ollama() -> bool:
 
 
 def _check_playwright() -> bool:
-    """Check if Playwright Chromium executable is available.
-
-    Returns:
-        True if Playwright chromium browser is installed.
-    """
+    """Check if Playwright Chromium executable is available without booting the driver."""
+    import platform
     try:
-        venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
-        if os.path.exists(venv_site) and venv_site not in sys.path:
-            sys.path.append(venv_site)
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            return os.path.exists(p.chromium.executable_path)
+        system = platform.system()
+        if system == "Windows":
+            base = os.path.expanduser("~\\AppData\\Local\\ms-playwright")
+        elif system == "Darwin":
+            base = os.path.expanduser("~/Library/Caches/ms-playwright")
+        else:
+            base = os.path.expanduser("~/.cache/ms-playwright")
+            
+        if not os.path.exists(base):
+            return False
+            
+        for folder in os.listdir(base):
+            if folder.startswith("chromium-"):
+                return True
+        return False
     except Exception:
         return False
 
@@ -352,6 +361,21 @@ async def add_library_entry(req: LibraryAddRequest) -> Dict[str, bool]:
     """
     _add_recent_output(req.path)
     return {"success": True}
+
+@app.get("/content/browse-directory")
+def browse_directory() -> Dict[str, str]:
+    """Open a native file dialog to pick a directory."""
+    import tkinter as tk
+    from tkinter import filedialog
+    
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    
+    directory = filedialog.askdirectory(title="Select Output Directory")
+    root.destroy()
+    
+    return {"path": directory}
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Course Endpoints
@@ -604,7 +628,7 @@ async def get_youtube_status():
     return {"connected": creds is not None and not (creds.expired and not creds.refresh_token)}
 
 @app.post("/settings/youtube/connect")
-async def connect_youtube_endpoint():
+def connect_youtube_endpoint():
     from src.auth import connect_youtube
     try:
         creds = connect_youtube()
@@ -745,7 +769,7 @@ async def pdf_export_external(req: ExternalPdfExportRequest) -> Dict[str, str]:
 
 
 @app.post("/settings/playwright/install")
-async def install_playwright() -> Dict[str, bool]:
+def install_playwright() -> Dict[str, bool]:
     """Install Playwright browsers automatically."""
     try:
         import subprocess
