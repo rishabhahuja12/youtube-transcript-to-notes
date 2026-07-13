@@ -26,16 +26,14 @@ const Settings = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      // Fetch health independently so it doesn't block pool settings
-      fetchOllamaStatus().then(healthData => {
-        setHealthStatus(healthData);
-      }).catch(console.error);
+      const [healthData, ytData, poolData] = await Promise.all([
+        fetchOllamaStatus().catch(err => { console.error(err); return healthStatus; }),
+        fetchYouTubeStatus().catch(err => { console.error(err); return { connected: false }; }),
+        fetchPoolSettings()
+      ]);
 
-      fetchYouTubeStatus().then(ytData => {
-        setYoutubeConnected(ytData.connected);
-      }).catch(console.error);
-
-      const poolData = await fetchPoolSettings();
+      setHealthStatus(healthData);
+      setYoutubeConnected(ytData.connected);
       setPoolConfigs(poolData);
       setError(null);
     } catch (err) {
@@ -89,6 +87,14 @@ const Settings = () => {
   };
 
   const filteredPool = poolConfigs.filter(cfg => cfg.capability === activeTab);
+
+  if (loading) {
+    return (
+      <div className="settings-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <div style={{ color: 'var(--text-secondary)', fontSize: '1.2rem' }}>Loading settings...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="settings-container">

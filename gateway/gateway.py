@@ -30,7 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = httpx.AsyncClient()
+client = httpx.AsyncClient(timeout=300.0)
 
 @app.on_event("shutdown")
 async def shutdown_event() -> None:
