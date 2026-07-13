@@ -121,12 +121,16 @@ def run_pipeline(
         on_log("Assigning segments to chapters...")
         chapter_texts = assign_chapters(merged, chapters)
 
+        slug = _slugify(video_title) if video_title else "Course"
+        course_dir = os.path.abspath(os.path.join(output_dir, slug))
+        os.makedirs(course_dir, exist_ok=True)
+
         chapter_frames = None
         if enable_multimodal and youtube_url:
             try:
                 on_log("Step 2.5: Downloading video and extracting frames...")
                 from src.frame_extractor import download_video, extract_key_frames, assign_frames_to_chapters
-                frames_dir = os.path.join(output_dir, "frames")
+                frames_dir = os.path.join(course_dir, "frames")
                 video_path = download_video(youtube_url, frames_dir)
                 on_log(f"Video downloaded to {video_path}, extracting frames...")
                 frames = extract_key_frames(video_path, frames_dir)
@@ -143,13 +147,13 @@ def run_pipeline(
                 chapter_frames = None
 
         return _run_llm_pipeline(
-            chapters, chapter_texts, output_dir, pool, active_pool, cancel_event, on_log, on_progress,
+            chapters, chapter_texts, course_dir, pool, active_pool, cancel_event, on_log, on_progress,
             video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
         )
 
     except Exception as e:
         on_log(f"CRITICAL ERROR in pipeline: {str(e)}")
-        return {"success": False, "detailed_path": "", "practical_path": "", "error": str(e)}
+        return {"success": False, "course_dir": "", "detailed_path": "", "practical_path": "", "error": str(e)}
 
 
 def run_pipeline_from_data(
@@ -194,12 +198,16 @@ def run_pipeline_from_data(
         on_log("Assigning segments to chapters...")
         chapter_texts = assign_chapters(merged, chapters)
 
+        slug = _slugify(video_title) if video_title else "Course"
+        course_dir = os.path.abspath(os.path.join(output_dir, slug))
+        os.makedirs(course_dir, exist_ok=True)
+
         chapter_frames = None
         if enable_multimodal and youtube_url:
             try:
                 on_log("Step 2.5: Downloading video and extracting frames...")
                 from src.frame_extractor import download_video, extract_key_frames, assign_frames_to_chapters
-                frames_dir = os.path.join(output_dir, "frames")
+                frames_dir = os.path.join(course_dir, "frames")
                 video_path = download_video(youtube_url, frames_dir)
                 on_log(f"Video downloaded to {video_path}, extracting frames...")
                 frames = extract_key_frames(video_path, frames_dir)
@@ -216,19 +224,19 @@ def run_pipeline_from_data(
                 chapter_frames = None
 
         return _run_llm_pipeline(
-            chapters, chapter_texts, output_dir, pool, active_pool, cancel_event, on_log, on_progress,
+            chapters, chapter_texts, course_dir, pool, active_pool, cancel_event, on_log, on_progress,
             video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
         )
 
     except Exception as e:
         on_log(f"CRITICAL ERROR in pipeline: {str(e)}")
-        return {"success": False, "detailed_path": "", "practical_path": "", "error": str(e)}
+        return {"success": False, "course_dir": "", "detailed_path": "", "practical_path": "", "error": str(e)}
 
 
 def _run_llm_pipeline(
     chapters: list,
     chapter_texts: list,
-    output_dir: str,
+    course_dir: str,
     original_pool: ProviderPool,
     active_pool: ProviderPool,
     cancel_event: threading.Event,
@@ -242,7 +250,8 @@ def _run_llm_pipeline(
     detailed_path = ""
     practical_path = ""
     kag_html_path = ""
-    checkpoint_path = os.path.join(output_dir, ".checkpoint.json")
+    os.makedirs(course_dir, exist_ok=True)
+    checkpoint_path = os.path.join(course_dir, ".checkpoint.json")
 
     try:
         # --- Pre-flight estimation ---
@@ -503,7 +512,7 @@ def _run_llm_pipeline(
         )
 
         slug = _slugify(video_title) if video_title else "Course"
-        detailed_path = os.path.join(output_dir, f"{slug}_Detailed_Notes.md")
+        detailed_path = os.path.join(course_dir, f"{slug}_Detailed_Notes.md")
         with open(detailed_path, "w", encoding="utf-8") as f:
             f.write(full_detailed_content)
         on_log(f"Detailed notes saved to: {detailed_path}")
@@ -640,7 +649,7 @@ def _run_llm_pipeline(
                 "[Skipped due to pipeline cancellation]\n"
             )
 
-        practical_path = os.path.join(output_dir, f"{slug}_Practical_Notes.md")
+        practical_path = os.path.join(course_dir, f"{slug}_Practical_Notes.md")
         with open(practical_path, "w", encoding="utf-8") as f:
             f.write(practical_summary)
         on_log(f"Practical notes saved to: {practical_path}")
@@ -660,8 +669,8 @@ def _run_llm_pipeline(
                 graph_data = extract_concepts(
                     full_detailed_content, text_pool.current, on_log
                 )
-                kag_json_path = os.path.join(output_dir, f"{slug}_knowledge_graph.json")
-                kag_html_path = os.path.join(output_dir, f"{slug}_knowledge_graph.html")
+                kag_json_path = os.path.join(course_dir, f"{slug}_knowledge_graph.json")
+                kag_html_path = os.path.join(course_dir, f"{slug}_knowledge_graph.html")
                 with open(kag_json_path, "w", encoding="utf-8") as f:
                     json.dump(graph_data, f, indent=2)
                 html_content = render_html(graph_data)
@@ -680,6 +689,7 @@ def _run_llm_pipeline(
                 on_log(f"WARNING: Checkpoint cleanup failed: {e}")
         return {
             "success": True,
+            "course_dir": course_dir,
             "detailed_path": detailed_path,
             "practical_path": practical_path,
             "kag_html_path": kag_html_path,
@@ -690,6 +700,7 @@ def _run_llm_pipeline(
         on_log(f"CRITICAL ERROR in pipeline: {e}")
         return {
             "success": False,
+            "course_dir": course_dir if 'course_dir' in locals() else "",
             "detailed_path": detailed_path,
             "practical_path": practical_path,
             "kag_html_path": kag_html_path,
