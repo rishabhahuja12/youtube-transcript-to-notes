@@ -26,6 +26,7 @@ def start_backend() -> None:
         host="127.0.0.1", 
         port=8000, 
         log_level="info",
+        access_log=False,
         reload=False
     )
     server = uvicorn.Server(config)
@@ -53,7 +54,7 @@ def start_services() -> list:
         p = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn", svc["module"], 
-                "--host", "127.0.0.1", "--port", str(svc["port"])
+                "--host", "127.0.0.1", "--port", str(svc["port"]), "--no-access-log"
             ],
             cwd=SCRIPT_DIR,
             stdout=sys.stdout,
