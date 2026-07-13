@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
-import { startPipeline, connectPipelineWebSocket } from '../utils/api';
+import { startPipeline, connectPipelineWebSocket, addCourseToLibrary, browseDirectory } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check } from 'lucide-react';
 
 const extractVideoId = (url) => {
@@ -25,6 +25,17 @@ const NewPipeline = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  const handleBrowse = async () => {
+    try {
+      const data = await browseDirectory();
+      if (data && data.path) {
+        setOutputDir(data.path);
+      }
+    } catch (err) {
+      console.error('Browse failed:', err);
+    }
+  };
+
   const togglePowerUp = (key) => {
     setPowerUps(prev => ({ ...prev, [key]: !prev[key] }));
   };
@@ -47,6 +58,8 @@ const NewPipeline = () => {
     try {
       setIsSubmitting(true);
       setError(null);
+      setPipelineStatus('running');
+      setPipelineProgress({ current: 0, total: 100 });
       
       const isYoutube = inputType === 'youtube';
       const payload = {
@@ -71,10 +84,25 @@ const NewPipeline = () => {
           setPipelineProgress({ current: msg.current, total: msg.total });
         } else if (msg.type === 'complete') {
           if (wsConnection) wsConnection.close();
-          setPipelineStatus('completed');
-          addLog('Pipeline completed successfully!', 'success');
-          if (msg.course_dir) setActiveCourseDir(msg.course_dir);
-          setCurrentScreen('courseWorkspace');
+          if (msg.success === false) {
+             setPipelineStatus('error');
+             addLog(`Pipeline failed to complete: ${msg.result?.error || 'Unknown error'}`, 'error');
+             setError(msg.result?.error || 'Pipeline failed to complete');
+          } else {
+             setPipelineStatus('completed');
+             addLog('Pipeline completed successfully!', 'success');
+             if (msg.course_dir) {
+                addCourseToLibrary(msg.course_dir).then(() => {
+                   setActiveCourseDir({ path: msg.course_dir, id: 0 });
+                   setCurrentScreen('courseWorkspace');
+                }).catch(() => {
+                   setActiveCourseDir({ path: msg.course_dir, id: 0 });
+                   setCurrentScreen('courseWorkspace');
+                });
+             } else {
+                setCurrentScreen('courseWorkspace');
+             }
+          }
         } else if (msg.type === 'error') {
           if (wsConnection) wsConnection.close();
           setPipelineStatus('error');
@@ -161,14 +189,25 @@ const NewPipeline = () => {
 
           <div className="input-field">
             <label htmlFor="output-dir">Output Directory (Optional)</label>
-            <input 
-              id="output-dir"
-              type="text" 
-              className="text-input" 
-              placeholder="Leave blank for default"
-              value={outputDir}
-              onChange={(e) => setOutputDir(e.target.value)}
-            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input 
+                id="output-dir"
+                type="text" 
+                className="text-input" 
+                placeholder="Leave blank for default"
+                value={outputDir}
+                onChange={(e) => setOutputDir(e.target.value)}
+                style={{ flex: 1 }}
+              />
+              <button 
+                type="button" 
+                onClick={handleBrowse} 
+                className="secondary-button"
+                style={{ padding: '0 15px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'var(--panel)', border: '1px solid var(--hairline)', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer' }}
+              >
+                <Folder size={18} /> Browse
+              </button>
+            </div>
             <small className="field-hint">Defaults to ~/StudySuite/Output</small>
           </div>
         </div>

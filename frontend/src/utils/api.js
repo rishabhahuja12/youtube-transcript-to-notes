@@ -217,4 +217,13 @@ export const disconnectYouTube = async () => {
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
+  return await response.json();
+};
+
+export const browseDirectory = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/content/browse-directory`, {
+    signal: AbortSignal.timeout(300000) // 5 minutes timeout for user to pick folder
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
 };
