@@ -87,7 +87,7 @@ async def test_websocket_proxy():
     mock_ws.__aenter__.return_value = mock_ws
     
     with patch("websockets.connect", return_value=mock_ws):
-        with client.websocket_connect("/ws/pipeline") as websocket:
+        with client.websocket_connect("/api/pipeline/stream") as websocket:
             websocket.send_text("test")
             # The background task will catch ConnectionClosed and finish
             pass
