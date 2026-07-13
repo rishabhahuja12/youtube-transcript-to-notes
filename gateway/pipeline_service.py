@@ -83,7 +83,7 @@ def get_on_log_callback(loop: asyncio.AbstractEventLoop) -> Callable[[str], None
         A callable that takes a string message and broadcasts it.
     """
     def on_log(message: str) -> None:
-        msg = {"type": "log", "msg": message}
+        msg = {"type": "log", "message": message}
         asyncio.run_coroutine_threadsafe(broadcast_message(msg), loop)
     return on_log
 

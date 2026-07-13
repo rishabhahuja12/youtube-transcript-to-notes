@@ -72,8 +72,8 @@ def test_websocket_stream():
         except RuntimeError:
             loop = asyncio.new_event_loop()
             
-        loop.run_until_complete(broadcast_message({"type": "log", "msg": "hello from test"}))
+        loop.run_until_complete(broadcast_message({"type": "log", "message": "hello from test"}))
         
         data = websocket.receive_json()
         assert data["type"] == "log"
-        assert data["msg"] == "hello from test"
+        assert data["message"] == "hello from test"
