@@ -8,3 +8,5 @@ config.json
 .env
 .checkpoint.json
 pipeline.log
+graphify-out/
+client_secret.json
