@@ -1,5 +1,6 @@
 import re
 import os
+import httpx
 import yt_dlp
 from src.auth import load_credentials, get_video_metadata
 
@@ -40,6 +41,7 @@ def get_transcript(url: str) -> list:
         'writesubtitles': True,
         'writeautomaticsub': True,
         'subtitleslangs': ['en'],
+        'js_runtimes': {'node': {'path': 'C:/Program Files/nodejs/node.exe'}},
         'quiet': True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -51,7 +53,6 @@ def get_transcript(url: str) -> list:
         # In a real implementation, you'd parse the VTT/SRT.
         # For simplicity, returning a mock format or we can use yt_dlp's downloaded subtitles.
         # However, to maintain the blocks format, we parse the subtitles file.
-        import httpx
         sub_url = subs.get('en', {}).get('url')
         if not sub_url:
             sub_url = list(subs.values())[0].get('url')

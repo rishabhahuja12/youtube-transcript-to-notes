@@ -9,7 +9,7 @@ def test_extract_video_id():
     assert extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
     
     with pytest.raises(ValueError):
-        extract_video_id("invalid_url")
+        extract_video_id("not_a_valid_youtube_url_at_all")
 
 @patch("src.auth.build")
 def test_get_video_metadata(mock_build):
