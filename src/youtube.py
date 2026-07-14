@@ -22,7 +22,7 @@ def extract_video_id(url: str) -> str:
         match = re.search(pattern, url.strip())
         if match:
             return match.group(1)
-    raise ValueError(f"Could not extract YouTube video ID from: {url}")
+    raise ValueError(f"invalid_url: Could not extract YouTube video ID from: {url}")
 
 def get_transcript(url: str) -> list:
     """Fetch and parse subtitles from a YouTube video.
@@ -58,9 +58,15 @@ def get_transcript(url: str) -> list:
             sub_url = list(subs.values())[0].get('url')
         
         if sub_url:
-            vtt_content = httpx.get(sub_url).text
-            return parse_vtt_to_blocks(vtt_content)
-        return []
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(sub_url)
+                resp.raise_for_status()
+                vtt_content = resp.text
+            blocks = parse_vtt_to_blocks(vtt_content)
+            if not blocks:
+                raise ValueError("Parsed transcript is empty or invalid.")
+            return blocks
+        raise Exception("Subtitle URL not found.")
 
 def parse_vtt_to_blocks(vtt: str) -> list:
     """Parse VTT format to blocks of (start_sec, end_sec, text).
@@ -178,10 +184,24 @@ def extract_from_url(url: str, on_log: callable = None) -> dict:
     """
     log = on_log or (lambda msg: None)
 
-    video_id = extract_video_id(url)
-    log(f"Extracted video ID: {video_id}")
+    try:
+        video_id = extract_video_id(url)
+        log(f"Extracted video ID: {video_id}")
+    except ValueError as e:
+        log(str(e))
+        return {
+            'transcript_blocks': [],
+            'chapters': [],
+            'metadata': None,
+            'source_info': '',
+            'status': 'invalid_url'
+        }
 
-    creds = load_credentials()
+    try:
+        creds = load_credentials()
+    except Exception as e:
+        log(f"WARNING: OAuth credentials error: {str(e)}")
+        creds = None
     
     metadata = None
     if creds:
@@ -197,7 +217,13 @@ def extract_from_url(url: str, on_log: callable = None) -> dict:
         log("No Google OAuth credentials found. Prompting 'Connect YouTube'.")
         
     if not metadata:
-        metadata = {'title': 'Unknown', 'description': '', 'channel': 'Unknown', 'duration': 0}
+        return {
+            'transcript_blocks': [],
+            'chapters': [],
+            'metadata': None,
+            'source_info': '',
+            'status': 'metadata_failed'
+        }
 
     # Fetch transcript
     log("Fetching transcript via yt-dlp...")
@@ -207,8 +233,13 @@ def extract_from_url(url: str, on_log: callable = None) -> dict:
         status = "complete"
     except Exception as e:
         log(f"WARNING: Transcript failed: {str(e)}")
-        transcript_blocks = []
-        status = "transcript_failed"
+        return {
+            'transcript_blocks': [],
+            'chapters': [],
+            'metadata': metadata,
+            'source_info': '',
+            'status': 'transcript_failed'
+        }
 
     chapters = []
     source_info = ""

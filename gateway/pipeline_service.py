@@ -119,9 +119,9 @@ def pipeline_worker(request: PipelineStartRequest, pool: ProviderPool, loop: asy
             on_log("Fetching YouTube data...")
             from src.youtube import extract_from_url
             yt_data = extract_from_url(request.youtube_url, on_log=on_log)
-            if yt_data.get("status") == "transcript_failed":
-                on_log("Transcript extraction failed. Halting pipeline.")
-                msg = {"type": "error", "message": "Transcript extraction failed"}
+            if yt_data.get("status") in ("transcript_failed", "metadata_failed", "invalid_url"):
+                on_log(f"Extraction failed with status: {yt_data.get('status')}. Halting pipeline.")
+                msg = {"type": "error", "message": f"Extraction failed: {yt_data.get('status')}"}
                 asyncio.run_coroutine_threadsafe(broadcast_message(msg), loop)
                 return
 

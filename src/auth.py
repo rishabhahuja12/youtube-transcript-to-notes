@@ -1,5 +1,6 @@
 import os
-import pickle
+import json
+from google.oauth2.credentials import Credentials
 from typing import Any, Dict, Optional
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -18,8 +19,8 @@ def connect_youtube() -> Any:
     creds = flow.run_local_server(port=0)
     
     os.makedirs(os.path.expanduser('~/.studysuite'), exist_ok=True)
-    with open(os.path.expanduser('~/.studysuite/yt_token.pickle'), 'wb') as f:
-        pickle.dump(creds, f)
+    with open(os.path.expanduser('~/.studysuite/yt_token.json'), 'w') as f:
+        f.write(creds.to_json())
     return creds
 
 def load_credentials() -> Optional[Any]:
@@ -28,16 +29,19 @@ def load_credentials() -> Optional[Any]:
     Returns:
         Optional[Any]: Google OAuth credentials object if found and valid, None otherwise.
     """
-    path = os.path.expanduser('~/.studysuite/yt_token.pickle')
+    path = os.path.expanduser('~/.studysuite/yt_token.json')
     if not os.path.exists(path):
         return None
-    with open(path, 'rb') as f:
-        creds = pickle.load(f)
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(path, 'wb') as f:
-            pickle.dump(creds, f)
-    return creds
+    try:
+        creds = Credentials.from_authorized_user_file(path, SCOPES)
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            with open(path, 'w') as f:
+                f.write(creds.to_json())
+        return creds
+    except Exception as e:
+        raise ValueError("metadata_failed: Connect YouTube")
+
 
 def get_video_metadata(video_id: str, creds: Any) -> Dict[str, Any]:
     """Fetch metadata for a YouTube video.

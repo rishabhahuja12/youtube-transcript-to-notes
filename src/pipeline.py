@@ -187,6 +187,11 @@ def run_pipeline_from_data(
 
         on_log("=== PIPELINE STARTED ===")
 
+        if not transcript_blocks:
+            raise ValueError("Transcript processing failed or returned empty data.")
+        if not chapters:
+            raise ValueError("No chapters available for processing.")
+
         for c in chapters:
             c["time_sec"] = parse_time_str(c["time"])
         chapters.sort(key=lambda c: c["time_sec"])

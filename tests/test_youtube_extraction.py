@@ -45,8 +45,8 @@ def test_get_video_metadata(mock_build):
     assert metadata["duration"] == 3723
 
 @patch("src.youtube.yt_dlp.YoutubeDL")
-@patch("src.youtube.httpx.get")
-def test_get_transcript(mock_get, mock_ytdl):
+@patch("src.youtube.httpx.Client")
+def test_get_transcript(mock_client_cls, mock_ytdl):
     mock_instance = MagicMock()
     mock_ytdl.return_value.__enter__.return_value = mock_instance
     
@@ -56,9 +56,12 @@ def test_get_transcript(mock_get, mock_ytdl):
         }
     }
     
+    mock_client = MagicMock()
+    mock_client_cls.return_value.__enter__.return_value = mock_client
+    
     mock_response = MagicMock()
     mock_response.text = "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nHello world!"
-    mock_get.return_value = mock_response
+    mock_client.get.return_value = mock_response
     
     blocks = get_transcript("url")
     assert len(blocks) == 1
@@ -100,5 +103,17 @@ def test_extract_from_url_transcript_failed(mock_get_transcript, mock_get_video_
     result = extract_from_url("dQw4w9WgXcQ")
     
     assert result["status"] == "transcript_failed"
+    assert result["transcript_blocks"] == []
+    assert len(result["chapters"]) == 0
+
+@patch("src.youtube.load_credentials")
+def test_extract_from_url_metadata_failed(mock_load_credentials):
+    # If no credentials, metadata fails
+    mock_load_credentials.return_value = None
+    
+    result = extract_from_url("dQw4w9WgXcQ")
+    
+    assert result["status"] == "metadata_failed"
+    assert result["metadata"] is None
     assert result["transcript_blocks"] == []
     assert len(result["chapters"]) == 0
