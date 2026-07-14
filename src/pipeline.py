@@ -24,6 +24,11 @@ from src.llm_client import (
     estimate_tokens,
     estimate_pipeline_time,
     get_rate_limit_info,
+    RateLimitError,
+    AuthenticationError,
+    InvalidRequestError,
+    ProviderUnavailableError,
+    LLMError,
 )
 from src.provider_pool import ProviderPool
 
@@ -381,6 +386,7 @@ def _run_llm_pipeline(
             response = None
             pipeline_cancelled = False
 
+            fallback_reason = "Max retries exceeded"
             for attempt in range(max_retries):
                 # Wait for rate limiter inside the retry loop
                 if not limiter.wait_if_needed(est_tokens, cancel_event, on_log):
@@ -416,51 +422,72 @@ def _run_llm_pipeline(
                         actual_tokens = est_tokens + estimate_tokens(response)
                         limiter.record_actual_tokens(actual_tokens)
                     break  # Success!
-                except Exception as e:
+                except RateLimitError as e:
+                    if active_pool.rotate():
+                        on_log(f"Rate limit hit. Switching to {active_pool.current_label()}...")
+                        limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                        continue
+                    
+                    err_str = str(e)
+                    match = re.search(r"Please retry in ([\d\.]+)s", err_str)
+                    if match:
+                        try:
+                            retry_delay = float(match.group(1)) + 2.0
+                        except ValueError:
+                            pass
+                            
+                    on_log(f"All API configs exhausted. Cooling down for {retry_delay:.1f}s...")
+                    if cancel_event.wait(retry_delay):
+                        if on_phase: on_phase("notes", "cancelled")
+                        return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": "", "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                    active_pool.reset_cycle()
+                    limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                    retry_delay *= 2
+                    fallback_reason = str(e)
+                except ProviderUnavailableError as e:
                     if attempt < max_retries - 1:
-                        # Try to rotate key first on error
-                        if "429" in str(e) or "rate" in str(e).lower():
-                            if active_pool.rotate():
-                                on_log(
-                                    f"Rate limit hit. Switching to {active_pool.current_label()} "
-                                    f"immediately..."
-                                )
-                                limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
-                                continue # retry immediately without sleep
-
-                        err_str = str(e)
-                        # Try to parse exact retry delay from Gemini's error
-                        match = re.search(r"Please retry in ([\d\.]+)s", err_str)
-                        if match:
-                            try:
-                                retry_delay = float(match.group(1)) + 2.0  # +2s buffer
-                            except ValueError:
-                                pass
-                                
-                        on_log(
-                            f"All API configs exhausted. Cooling down for {retry_delay:.1f}s..."
-                        )
-                        # Interruptible cooldown
+                        on_log(f"Network/timeout error: {e}. Retrying in {retry_delay}s...")
                         if cancel_event.wait(retry_delay):
                             if on_phase: on_phase("notes", "cancelled")
-                            return {
-                                "success": False,
-                                "status": "cancelled",
-                                "course_dir": course_dir,
-                                "detailed_path": "",
-                                "practical_path": "",
-                                "kag_html_path": "",
-                                "error": "Cancelled by user"
-                            }
-                        active_pool.reset_cycle()
-                        limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
-                        retry_delay *= 2  # Exponential backoff (for the next attempt, if any)
+                            return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": "", "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                        retry_delay *= 2
                     else:
-                        on_log(
-                            f"WARNING: Failed to generate notes for Chapter "
-                            f"{idx + 1} after {max_retries} attempts: {e}"
-                        )
+                        on_log(f"WARNING: Network error after {max_retries} attempts: {e}")
                         response = None
+                    fallback_reason = str(e)
+                except AuthenticationError as e:
+                    current_endpoint = active_pool.current.endpoint_url
+                    current_key = active_pool.current.api_key
+                    has_new = False
+                    while active_pool.rotate():
+                        if active_pool.current.endpoint_url == current_endpoint and active_pool.current.api_key == current_key:
+                            continue
+                        has_new = True
+                        break
+                    if has_new:
+                        on_log(f"Authentication error. Switching to {active_pool.current_label()}...")
+                        limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                        continue
+                    else:
+                        on_log(f"WARNING: Auth error for Chapter {idx + 1}: {e} (No eligible configs left)")
+                        response = None
+                        fallback_reason = str(e)
+                        break
+                except InvalidRequestError as e:
+                    if active_pool.rotate():
+                        on_log(f"Invalid request error. Switching to {active_pool.current_label()}...")
+                        limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                        continue
+                    else:
+                        on_log(f"WARNING: Invalid request error for Chapter {idx + 1}: {e} (No eligible configs left)")
+                        response = None
+                        fallback_reason = str(e)
+                        break
+                except Exception as e:
+                    on_log(f"WARNING: Unexpected error for Chapter {idx + 1}: {e}")
+                    response = None
+                    fallback_reason = str(e)
+                    break
             
             if response:
                 if assigned_frames:
@@ -476,12 +503,12 @@ def _run_llm_pipeline(
                 fallback = (
                     f"## {idx + 1}. {title} (Start Time: {time_str})\n\n"
                     f"### Summary\n"
-                    f"[Could not generate notes using LLM due to repeated "
-                    f"errors/rate limits.]\n\n"
+                    f"[Could not generate notes using LLM. Reason: {fallback_reason}]\n\n"
                     f"### Transcript Snippet\n"
                     f"{ch_text[:500]}..."
                 )
                 detailed_notes_sections.append(fallback)
+                final_status = "degraded"
 
             # Save checkpoint after each chapter
             try:
@@ -625,6 +652,7 @@ def _run_llm_pipeline(
             "course based on its chapters and overall content."
         )
         est_tokens_summary = estimate_tokens(user_prompt_summary + system_prompt_summary)
+        fallback_reason_summary = "Max retries exceeded"
 
         for attempt in range(max_retries):
             if cancel_event.is_set():
@@ -668,60 +696,85 @@ def _run_llm_pipeline(
                     actual_tokens = est_tokens_summary + estimate_tokens(practical_summary)
                     limiter.record_actual_tokens(actual_tokens)
                 break  # Success!
-            except Exception as e:
+            except RateLimitError as e:
+                if active_pool.rotate():
+                    on_log(f"Rate limit hit. Switching to {active_pool.current_label()}...")
+                    limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                    continue
+                
+                err_str = str(e)
+                match = re.search(r"Please retry in ([\d\.]+)s", err_str)
+                if match:
+                    try:
+                        retry_delay = float(match.group(1)) + 2.0
+                    except ValueError:
+                        pass
+                        
+                on_log(f"All API configs exhausted. Cooling down for {retry_delay:.1f}s...")
+                if cancel_event.wait(retry_delay):
+                    if on_phase: on_phase("practical", "cancelled")
+                    return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": detailed_path, "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                active_pool.reset_cycle()
+                limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                retry_delay *= 2
+                fallback_reason_summary = str(e)
+            except ProviderUnavailableError as e:
                 if attempt < max_retries - 1:
-                    # Try to rotate key first on error
-                    if "429" in str(e) or "rate" in str(e).lower():
-                        if active_pool.rotate():
-                            on_log(
-                                f"Rate limit hit. Switching to {active_pool.current_label()} "
-                                f"immediately..."
-                            )
-                            limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
-                            continue # retry immediately without sleep
-
-                    err_str = str(e)
-                    # Try to parse exact retry delay from Gemini's error
-                    match = re.search(r"Please retry in ([\d\.]+)s", err_str)
-                    if match:
-                        try:
-                            retry_delay = float(match.group(1)) + 2.0  # +2s buffer
-                        except ValueError:
-                            pass
-                            
-                    on_log(
-                        f"All API configs exhausted. Cooling down for {retry_delay:.1f}s..."
-                    )
-                    # Interruptible cooldown
+                    on_log(f"Network/timeout error: {e}. Retrying in {retry_delay}s...")
                     if cancel_event.wait(retry_delay):
                         if on_phase: on_phase("practical", "cancelled")
-                        return {
-                            "success": False,
-                            "status": "cancelled",
-                            "course_dir": course_dir,
-                            "detailed_path": detailed_path,
-                            "practical_path": "",
-                            "kag_html_path": "",
-                            "error": "Cancelled by user"
-                        }
-                    active_pool.reset_cycle()
-                    limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
-                    retry_delay *= 2  # Exponential backoff
+                        return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": detailed_path, "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                    retry_delay *= 2
                 else:
-                    on_log(
-                        f"ERROR: Failed to generate practical summary after {max_retries} attempts: {e}"
-                    )
-                    practical_summary = (
-                        f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
-                        f"[Failed to generate cheat-sheet using LLM: {e}]\n"
-                    )
-                    final_status = "degraded"
+                    on_log(f"ERROR: Failed to generate practical summary after {max_retries} attempts: {e}")
+                    practical_summary = None
+                fallback_reason_summary = str(e)
+            except AuthenticationError as e:
+                current_endpoint = active_pool.current.endpoint_url
+                current_key = active_pool.current.api_key
+                has_new = False
+                while active_pool.rotate():
+                    if active_pool.current.endpoint_url == current_endpoint and active_pool.current.api_key == current_key:
+                        continue
+                    has_new = True
+                    break
+                if has_new:
+                    on_log(f"Authentication error. Switching to {active_pool.current_label()}...")
+                    limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                    continue
+                else:
+                    on_log(f"ERROR: Auth error generating practical summary: {e} (No eligible configs left)")
+                    practical_summary = None
+                    fallback_reason_summary = str(e)
+                    break
+            except InvalidRequestError as e:
+                if active_pool.rotate():
+                    on_log(f"Invalid request error. Switching to {active_pool.current_label()}...")
+                    limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
+                    continue
+                else:
+                    on_log(f"ERROR: Invalid request error generating practical summary: {e} (No eligible configs left)")
+                    practical_summary = None
+                    fallback_reason_summary = str(e)
+                    break
+            except Exception as e:
+                on_log(f"ERROR: Unexpected error generating practical summary: {e}")
+                practical_summary = None
+                fallback_reason_summary = str(e)
+                break
+                
+        is_summary_degraded = not practical_summary
+        if is_summary_degraded:
+            practical_summary = (
+                f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
+                f"[Failed to generate cheat-sheet using LLM: {fallback_reason_summary}]\n"
+            )
+            final_status = "degraded"
 
-        if practical_summary:
+        if not is_summary_degraded:
             if on_phase: on_phase("practical", "completed")
         else:
             if on_phase: on_phase("practical", "degraded")
-            final_status = "degraded"
 
         practical_path = os.path.join(course_dir, f"{slug}_Practical_Notes.md")
         with open(practical_path, "w", encoding="utf-8") as f:

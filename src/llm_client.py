@@ -10,9 +10,31 @@ import threading
 from collections import deque
 import urllib.request
 import urllib.error
+import socket
 
 APP_VERSION = "2.0.0"
 LLM_TIMEOUT_SECONDS = 180  # Max seconds to wait for a single LLM response
+
+class LLMError(Exception):
+    """Base class for all LLM errors."""
+    pass
+
+class RateLimitError(LLMError):
+    """HTTP 429 Too Many Requests."""
+    pass
+
+class AuthenticationError(LLMError):
+    """HTTP 401 Unauthorized or 403 Forbidden."""
+    pass
+
+class InvalidRequestError(LLMError):
+    """HTTP 400 Bad Request."""
+    pass
+
+class ProviderUnavailableError(LLMError):
+    """HTTP 502/503/504 Service Unavailable/Timeout."""
+    pass
+
 
 # ─────────────────────── Provider Rate Limit Presets ───────────────────────
 
@@ -296,9 +318,23 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
                 return str(res_data)
     except urllib.error.HTTPError as e:
         err_msg = e.read().decode("utf-8", errors="ignore")
-        raise ConnectionError(f"HTTP {e.code} Error: {e.reason}\nResponse: {err_msg}") from e
+        if e.code == 429:
+            raise RateLimitError(f"HTTP {e.code} Rate Limit: {e.reason}\nResponse: {err_msg}") from e
+        elif e.code in (401, 403):
+            raise AuthenticationError(f"HTTP {e.code} Auth Error: {e.reason}\nResponse: {err_msg}") from e
+        elif e.code == 400:
+            raise InvalidRequestError(f"HTTP {e.code} Invalid Request: {e.reason}\nResponse: {err_msg}") from e
+        elif e.code in (502, 503, 504):
+            raise ProviderUnavailableError(f"HTTP {e.code} Unavailable: {e.reason}\nResponse: {err_msg}") from e
+        raise LLMError(f"HTTP {e.code} Error: {e.reason}\nResponse: {err_msg}") from e
+    except TimeoutError as e:
+        raise ProviderUnavailableError(f"Timeout: {str(e)}") from e
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, socket.timeout):
+            raise ProviderUnavailableError(f"Timeout: {str(e.reason)}") from e
+        raise LLMError(f"Connection failure: {str(e)}") from e
     except Exception as e:
-        raise ConnectionError(f"Connection failure: {str(e)}") from e
+        raise LLMError(f"Connection failure: {str(e)}") from e
 
 
 def call_ollama_chat(model: str, messages: list) -> str:
@@ -326,12 +362,24 @@ def call_ollama_chat(model: str, messages: list) -> str:
             error_body = e.read().decode("utf-8")
         except Exception:
             error_body = str(e)
-        raise ConnectionError(f"Ollama returned {e.code}: {error_body}") from e
+        if e.code == 429:
+            raise RateLimitError(f"Ollama returned {e.code}: {error_body}") from e
+        elif e.code in (401, 403):
+            raise AuthenticationError(f"Ollama returned {e.code}: {error_body}") from e
+        elif e.code == 400:
+            raise InvalidRequestError(f"Ollama returned {e.code}: {error_body}") from e
+        elif e.code in (502, 503, 504):
+            raise ProviderUnavailableError(f"Ollama returned {e.code}: {error_body}") from e
+        raise LLMError(f"Ollama returned {e.code}: {error_body}") from e
+    except TimeoutError as e:
+        raise ProviderUnavailableError(f"Timeout: {str(e)}") from e
     except urllib.error.URLError as e:
+        if isinstance(e.reason, socket.timeout):
+            raise ProviderUnavailableError(f"Timeout: {str(e.reason)}") from e
         is_refused = isinstance(e.reason, ConnectionRefusedError)
         has_refused_str = hasattr(e.reason, 'strerror') and 'refused' in str(e.reason).lower()
         if is_refused or has_refused_str:
-            raise ConnectionError("Please start Ollama to use Chat.") from e
-        raise ConnectionError(f"Failed to connect to Ollama: {str(e.reason)}") from e
+            raise LLMError("Please start Ollama to use Chat.") from e
+        raise LLMError(f"Failed to connect to Ollama: {str(e.reason)}") from e
     except Exception as e:
-        raise ConnectionError(f"An error occurred while communicating with Ollama: {str(e)}") from e
+        raise LLMError(f"An error occurred while communicating with Ollama: {str(e)}") from e
