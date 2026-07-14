@@ -51,7 +51,14 @@ def mock_config(
     """Patch CONFIG_PATH to use a temp config with course dir."""
     config_file = tmp_path / "config.json"
     config_data = {
-        "recent_outputs": [tmp_course_dir],
+        "library": [
+            {
+                "id": "course_test123",
+                "path": tmp_course_dir,
+                "title": "TestCourse",
+                "status": "complete"
+            }
+        ]
     }
     config_file.write_text(
         json.dumps(config_data), encoding="utf-8"
@@ -116,14 +123,16 @@ async def test_library_empty(mock_empty_config: str) -> None:
 async def test_library_add(
     mock_config: str, tmp_course_dir: str
 ) -> None:
-    """POST /content/library/add should return success."""
+    """POST /content/library/add should return the created entry."""
     async with _client() as client:
         resp = await client.post(
             "/content/library/add",
             json={"path": tmp_course_dir},
         )
     assert resp.status_code == 200
-    assert resp.json()["success"] is True
+    data = resp.json()
+    assert "id" in data
+    assert data["path"] == tmp_course_dir
 
 
 @pytest.mark.asyncio
@@ -312,10 +321,12 @@ def test_mask_key_empty() -> None:
 async def test_pdf_export_missing_file(mock_config: str, tmp_course_dir: str) -> None:
     """PDF export with nonexistent md_path returns 400."""
     async with _client() as client:
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
         resp = await client.post(
             "/pdf/export",
             json={
-                "course_id": "invalid_id",
+                "course_id": course_id,
                 "filename": "does_not_exist.md",
                 "theme": "Textbook",
             },

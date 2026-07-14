@@ -29,7 +29,14 @@ def mock_config(
     """Patch CONFIG_PATH to use a temp config with course dir."""
     config_file = tmp_path / "config.json"
     config_data = {
-        "recent_outputs": [tmp_course_dir],
+        "library": [
+            {
+                "id": "course_test123",
+                "path": tmp_course_dir,
+                "title": "TestCourse",
+                "status": "complete"
+            }
+        ]
     }
     config_file.write_text(
         json.dumps(config_data), encoding="utf-8"
