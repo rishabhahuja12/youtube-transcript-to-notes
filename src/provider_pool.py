@@ -1,14 +1,53 @@
 import json
 from dataclasses import dataclass, asdict
 
+VALID_PROVIDERS = {"ollama", "gemini", "groq", "openrouter"}
+VALID_CAPABILITIES = {"text", "vision"}
+
 @dataclass
 class ProviderConfig:
     """A single API configuration entry in the pool."""
-    provider: str        # e.g. "Gemini", "Groq", "OpenRouter", "Ollama"
+    provider: str        # e.g. "gemini", "groq", "openrouter", "ollama"
     endpoint_url: str    # e.g. "https://generativelanguage.googleapis.com/..."
     api_key: str         # The API key (masked in logs)
     model_name: str      # e.g. "gemini-3.5-flash", "llama-3.3-70b"
     capability: str = "text"  # "text" or "vision"
+
+    def validate(self):
+        """Validate the provider configuration requirements."""
+        self.provider = (self.provider or "").strip().lower()
+        self.capability = (self.capability or "").strip().lower()
+        self.endpoint_url = (self.endpoint_url or "").strip()
+        self.model_name = (self.model_name or "").strip()
+        self.api_key = (self.api_key or "").strip()
+
+        if self.provider not in VALID_PROVIDERS:
+            raise ValueError(f"Invalid provider: '{self.provider}'. Must be one of {VALID_PROVIDERS}")
+            
+        if self.capability not in VALID_CAPABILITIES:
+            raise ValueError(f"Invalid capability: '{self.capability}'. Must be one of {VALID_CAPABILITIES}")
+            
+        if not self.endpoint_url:
+            raise ValueError("Endpoint URL cannot be empty.")
+            
+        if not self.model_name:
+            raise ValueError("Model name cannot be empty.")
+            
+        if self.provider != "ollama" and not self.api_key:
+            raise ValueError(f"API key is required for provider '{self.provider}'.")
+            
+        url_lower = self.endpoint_url.lower()
+        if not (url_lower.startswith("http://") or url_lower.startswith("https://")):
+            raise ValueError("Endpoint URL must start with http:// or https://")
+            
+        if self.provider == "ollama":
+            is_loopback = url_lower.startswith("http://localhost") or url_lower.startswith("http://127.0.0.1")
+            is_https = url_lower.startswith("https://")
+            if not (is_loopback or is_https):
+                raise ValueError("Plain HTTP is only permitted for loopback (localhost/127.0.0.1) Ollama endpoints.")
+        else:
+            if not url_lower.startswith("https://"):
+                raise ValueError(f"HTTPS is required for remote provider '{self.provider}'.")
 
 
 class ProviderPool:
@@ -69,7 +108,7 @@ class ProviderPool:
         return self._current_idx + 1
         
     def current_label(self) -> str:
-        """Human-readable label for logging, e.g. 'Config 2/3 (Groq)'."""
+        """Human-readable label for logging, e.g. 'Config 2/3 (groq)'."""
         if not self._configs:
             return "Empty Pool"
         provider = self.current.provider
@@ -92,13 +131,20 @@ class ProviderPool:
             data = json.loads(json_str)
             configs = []
             for item in data:
-                # Provide default capability if missing
                 if "capability" not in item:
                     item["capability"] = "text"
-                configs.append(ProviderConfig(**item))
+                
+                # Normalize before instantiation
+                item["provider"] = item.get("provider", "").lower()
+                
+                config = ProviderConfig(**item)
+                config.validate()
+                configs.append(config)
             return ProviderPool(configs)
-        except Exception:
-            return ProviderPool([])
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse provider pool JSON: {e}")
+        except Exception as e:
+            raise ValueError(f"Configuration error in provider pool: {str(e)}")
         
     def to_json(self) -> str:
         """Serialize the pool to a JSON string for storage."""
@@ -114,11 +160,17 @@ class ProviderPool:
         if not endpoint_url or not model_name:
             return ProviderPool([])
             
+        provider = (provider or "groq").lower()
+        if provider == "openai":
+             # Map legacy openai to something valid if needed, or openrouter
+             provider = "openrouter"
+             
         config = ProviderConfig(
-            provider=provider or "Groq",
+            provider=provider,
             endpoint_url=endpoint_url,
             api_key=api_key or "",
             model_name=model_name,
             capability="text"
         )
+        config.validate()
         return ProviderPool([config])

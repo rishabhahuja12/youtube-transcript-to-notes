@@ -80,7 +80,7 @@ def _client() -> AsyncClient:
     """Create an async test client for the FastAPI app."""
     transport = ASGITransport(app=app)
     return AsyncClient(
-        transport=transport, base_url="http://test"
+        transport=transport, base_url="https://test"
     )
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -245,21 +245,19 @@ async def test_settings_pool_get() -> None:
 @pytest.mark.asyncio
 async def test_settings_pool_post() -> None:
     """POST /settings/pool should return success."""
-    with patch("src.credentials.store_provider_pool") as mock_store:
+    with patch("src.credentials.store_provider_pool") as mock_store, patch("src.credentials.get_provider_pool_or_legacy") as mock_get:
+        from src.provider_pool import ProviderPool
+        mock_get.return_value = ProviderPool([])
         mock_store.return_value = True
         async with _client() as client:
             resp = await client.post(
                 "/settings/pool",
                 json={
-                    "pool": [
-                        {
-                            "provider": "Groq",
-                            "endpoint_url": "https://api.groq.com",
-                            "api_key": "sk-test",
-                            "model_name": "llama3",
-                            "capability": "text"
-                        }
-                    ]
+                    "provider": "groq",
+                    "endpoint_url": "https://api.groq.com",
+                    "api_key": "sk-test",
+                    "model_name": "llama3",
+                    "capability": "text"
                 }
             )
     assert resp.status_code == 200

@@ -12,7 +12,7 @@ const Settings = () => {
   const [error, setError] = useState(null);
 
   const [newKey, setNewKey] = useState({
-    provider: 'openai',
+    provider: 'groq',
     api_key: '',
     endpoint_url: '',
     model_name: '',
@@ -67,12 +67,16 @@ const Settings = () => {
   const handleAddKey = async (e) => {
     e.preventDefault();
     try {
-      await addPoolKey(newKey);
-      setNewKey({ provider: 'openai', api_key: '', endpoint_url: '', model_name: '', capability: activeTab });
-      await loadData();
+      const res = await addPoolKey(newKey);
+      if (res && res.success) {
+        setNewKey({ provider: 'groq', api_key: '', endpoint_url: '', model_name: '', capability: activeTab });
+        await loadData();
+      } else {
+        setError(res?.error || 'Keyring storage failed. Could not save provider configuration.');
+      }
     } catch (err) {
       console.error(err);
-      setError('Failed to add key.');
+      setError(err.message || 'Keyring storage failed. Could not save provider configuration.');
     }
   };
 
@@ -226,9 +230,9 @@ const Settings = () => {
                 value={newKey.provider}
                 onChange={e => setNewKey({...newKey, provider: e.target.value})}
               >
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
+                <option value="groq">Groq</option>
                 <option value="gemini">Gemini</option>
+                <option value="openrouter">OpenRouter</option>
                 <option value="ollama">Ollama (Local)</option>
               </select>
               

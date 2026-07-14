@@ -3,7 +3,7 @@ import pytest
 from src.provider_pool import ProviderPool, ProviderConfig
 
 def test_provider_pool_single_config():
-    config = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="k1", model_name="m1")
+    config = ProviderConfig(provider="Groq", endpoint_url="https://a", api_key="k1", model_name="m1")
     pool = ProviderPool([config])
     
     assert pool.total == 1
@@ -15,8 +15,8 @@ def test_provider_pool_single_config():
     assert pool.current_index == 1
 
 def test_provider_pool_multiple_configs():
-    c1 = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="k1", model_name="m1")
-    c2 = ProviderConfig(provider="Gemini", endpoint_url="http://b", api_key="k2", model_name="m2")
+    c1 = ProviderConfig(provider="Groq", endpoint_url="https://a", api_key="k1", model_name="m1")
+    c2 = ProviderConfig(provider="Gemini", endpoint_url="https://b", api_key="k2", model_name="m2")
     pool = ProviderPool([c1, c2])
     
     assert pool.total == 2
@@ -32,8 +32,8 @@ def test_provider_pool_multiple_configs():
     assert pool.current.provider == "Groq"
 
 def test_provider_pool_reset_cycle():
-    c1 = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="k1", model_name="m1")
-    c2 = ProviderConfig(provider="Gemini", endpoint_url="http://b", api_key="k2", model_name="m2")
+    c1 = ProviderConfig(provider="Groq", endpoint_url="https://a", api_key="k1", model_name="m1")
+    c2 = ProviderConfig(provider="Gemini", endpoint_url="https://b", api_key="k2", model_name="m2")
     pool = ProviderPool([c1, c2])
     
     pool.rotate() # goes to c2
@@ -47,7 +47,7 @@ def test_provider_pool_reset_cycle():
     assert pool.current.provider == "Gemini"
 
 def test_provider_pool_json_serialization():
-    c1 = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="k1", model_name="m1")
+    c1 = ProviderConfig(provider="Groq", endpoint_url="https://a", api_key="k1", model_name="m1")
     pool = ProviderPool([c1])
     
     json_str = pool.to_json()
@@ -58,11 +58,11 @@ def test_provider_pool_json_serialization():
     assert pool_loaded.current.api_key == "k1"
 
 def test_provider_pool_legacy_migration():
-    pool = ProviderPool.from_legacy("Gemini", "http://x", "key123", "gemini-1.5")
+    pool = ProviderPool.from_legacy("Gemini", "https://x", "key123", "gemini-1.5")
     
     assert pool.total == 1
-    assert pool.current.provider == "Gemini"
-    assert pool.current.endpoint_url == "http://x"
+    assert pool.current.provider == "gemini"
+    assert pool.current.endpoint_url == "https://x"
     assert pool.current.api_key == "key123"
     assert pool.current.model_name == "gemini-1.5"
 
@@ -75,7 +75,7 @@ def test_provider_pool_empty():
         _ = pool.current
 
 def test_provider_pool_security():
-    c1 = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="super_secret_key", model_name="m1")
+    c1 = ProviderConfig(provider="Groq", endpoint_url="https://a", api_key="super_secret_key", model_name="m1")
     pool = ProviderPool([c1])
     label = pool.current_label()
     # Masking is handled by the UI, but current_label just shows config index and provider
@@ -83,9 +83,9 @@ def test_provider_pool_security():
     assert "Groq" in label
 
 def test_provider_pool_capability_filtering():
-    c1 = ProviderConfig(provider="Groq", endpoint_url="http://a", api_key="k1", model_name="m1", capability="text")
-    c2 = ProviderConfig(provider="Gemini", endpoint_url="http://b", api_key="k2", model_name="m2", capability="vision")
-    c3 = ProviderConfig(provider="OpenRouter", endpoint_url="http://c", api_key="k3", model_name="m3", capability="text")
+    c1 = ProviderConfig(provider="Groq", endpoint_url="https://a", api_key="k1", model_name="m1", capability="text")
+    c2 = ProviderConfig(provider="Gemini", endpoint_url="https://b", api_key="k2", model_name="m2", capability="vision")
+    c3 = ProviderConfig(provider="OpenRouter", endpoint_url="https://c", api_key="k3", model_name="m3", capability="text")
     
     pool = ProviderPool([c1, c2, c3])
     
@@ -100,7 +100,7 @@ def test_provider_pool_capability_filtering():
 
 def test_provider_pool_json_capability_default():
     # Simulate old JSON without capability
-    old_json = '[{"provider": "Groq", "endpoint_url": "http://a", "api_key": "k1", "model_name": "m1"}]'
+    old_json = '[{"provider": "Groq", "endpoint_url": "https://a", "api_key": "k1", "model_name": "m1"}]'
     pool = ProviderPool.from_json(old_json)
     
     assert pool.total == 1

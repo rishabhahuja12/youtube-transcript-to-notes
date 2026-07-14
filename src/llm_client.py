@@ -17,10 +17,10 @@ LLM_TIMEOUT_SECONDS = 180  # Max seconds to wait for a single LLM response
 # ─────────────────────── Provider Rate Limit Presets ───────────────────────
 
 PROVIDER_PRESETS = {
-    "Groq": {"rpm": 25, "tpm": 5000, "label": "Groq Free (25 RPM, 5K TPM)"},
-    "OpenRouter": {"rpm": 18, "tpm": 50000, "label": "OpenRouter Free (18 RPM)"},
-    "Gemini": {"rpm": 15, "tpm": 1000000, "label": "Gemini AI Studio (15 RPM)"},
-    "Ollama": {"rpm": 9999, "tpm": 999999, "label": "Ollama Local (no limits)"},
+    "groq": {"rpm": 25, "tpm": 5000, "label": "Groq Free (25 RPM, 5K TPM)"},
+    "openrouter": {"rpm": 18, "tpm": 50000, "label": "OpenRouter Free (18 RPM)"},
+    "gemini": {"rpm": 15, "tpm": 1000000, "label": "Gemini AI Studio (15 RPM)"},
+    "ollama": {"rpm": 9999, "tpm": 999999, "label": "Ollama Local (no limits)"},
 }
 
 
@@ -54,7 +54,7 @@ class AdaptiveRateLimiter:
     @classmethod
     def for_provider(cls, provider: str) -> "AdaptiveRateLimiter":
         """Create a rate limiter with appropriate limits for a known provider."""
-        preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS.get("Groq"))
+        preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS.get("groq"))
         return cls(rpm=preset["rpm"], tpm=preset["tpm"])
     
     def _clean_old_entries(self):
@@ -173,7 +173,7 @@ def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str) -
         - pacing_delay_per_chapter: seconds between chapters
         - info: human-readable summary
     """
-    preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS.get("Groq"))
+    preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS.get("groq"))
     rpm = preset["rpm"]
     tpm = preset["tpm"]
     
@@ -190,7 +190,7 @@ def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str) -
     tpm_minutes = num_chapters / calls_per_minute_by_tpm if calls_per_minute_by_tpm < 9999 else 0
     
     # LLM generation time (~5s for cloud, ~15s for local per chapter)
-    if provider == "Ollama":
+    if provider == "ollama":
         gen_minutes = (num_chapters * 15) / 60
     else:
         gen_minutes = (num_chapters * 5) / 60
@@ -228,7 +228,7 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     
-    if images and provider == "Gemini":
+    if images and provider == "gemini":
         import base64
         content_list = [{"type": "text", "text": user_prompt}]
         for img_path in images:
@@ -245,7 +245,7 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
     else:
         messages.append({"role": "user", "content": user_prompt})
     
-    if provider == "Ollama":
+    if provider == "ollama":
         # Normalize Ollama native URL or OpenAI compatible URL
         if not (url.endswith("/api/chat") or url.endswith("/v1/chat/completions") or "/api/" in url or "/v1/" in url):
             url = url.rstrip("/") + "/api/chat"
