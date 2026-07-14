@@ -40,6 +40,7 @@ def run_pipeline(
     enable_multimodal: bool = False,
     youtube_url: str = None,
     enable_kag: bool = False,
+    on_phase: callable = None,
 ) -> dict:
     """Run the full notes-generation pipeline.
 
@@ -64,13 +65,14 @@ def run_pipeline(
     Returns
     -------
     dict
-        ``{"success": bool, "detailed_path": str, "practical_path": str,
+        ``{"success": bool, "status": str, "detailed_path": str, "practical_path": str,
         "error": str | None}``
     """
     detailed_path = ""
     practical_path = ""
 
     try:
+        if on_phase: on_phase("transcript", "running")
         active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
         if active_pool.total == 0:
             if enable_multimodal:
@@ -146,14 +148,16 @@ def run_pipeline(
                 on_log(f"WARNING: Frame extraction failed: {e}. Continuing without visuals.")
                 chapter_frames = None
 
+        if on_phase: on_phase("transcript", "completed")
         return _run_llm_pipeline(
             chapters, chapter_texts, course_dir, pool, active_pool, cancel_event, on_log, on_progress,
-            video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
+            video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag, on_phase=on_phase
         )
 
     except Exception as e:
+        if on_phase: on_phase("transcript", "failed")
         on_log(f"CRITICAL ERROR in pipeline: {str(e)}")
-        return {"success": False, "course_dir": "", "detailed_path": "", "practical_path": "", "error": str(e)}
+        return {"success": False, "status": "failed", "course_dir": "", "detailed_path": "", "practical_path": "", "error": str(e)}
 
 
 def run_pipeline_from_data(
@@ -168,6 +172,7 @@ def run_pipeline_from_data(
     enable_multimodal: bool = False,
     youtube_url: str = None,
     enable_kag: bool = False,
+    on_phase: callable = None,
 ) -> dict:
     """Run the pipeline from pre-extracted data (e.g. YouTube URL extraction).
 
@@ -186,6 +191,8 @@ def run_pipeline_from_data(
             raise ValueError("No text API keys configured.")
 
         on_log("=== PIPELINE STARTED ===")
+
+        if on_phase: on_phase("transcript", "running")
 
         if not transcript_blocks:
             raise ValueError("Transcript processing failed or returned empty data.")
@@ -228,14 +235,16 @@ def run_pipeline_from_data(
                 on_log(f"WARNING: Frame extraction failed: {e}. Continuing without visuals.")
                 chapter_frames = None
 
+        if on_phase: on_phase("transcript", "completed")
         return _run_llm_pipeline(
             chapters, chapter_texts, course_dir, pool, active_pool, cancel_event, on_log, on_progress,
-            video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag
+            video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag, on_phase=on_phase
         )
 
     except Exception as e:
+        if on_phase: on_phase("transcript", "failed")
         on_log(f"CRITICAL ERROR in pipeline: {str(e)}")
-        return {"success": False, "course_dir": "", "detailed_path": "", "practical_path": "", "error": str(e)}
+        return {"success": False, "status": "failed", "course_dir": "", "detailed_path": "", "practical_path": "", "error": str(e)}
 
 
 def _run_llm_pipeline(
@@ -250,13 +259,14 @@ def _run_llm_pipeline(
     video_title: str = None,
     chapter_frames: dict = None,
     enable_kag: bool = False,
+    on_phase: callable = None,
 ):
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
     detailed_path = ""
     practical_path = ""
-    kag_html_path = ""
     os.makedirs(course_dir, exist_ok=True)
     checkpoint_path = os.path.join(course_dir, ".checkpoint.json")
+    final_status = "completed"
 
     try:
         # --- Pre-flight estimation ---
@@ -293,6 +303,7 @@ def _run_llm_pipeline(
         # ------------------------------------------------------------------
         # Step 3: Call LLM for each chapter
         # ------------------------------------------------------------------
+        if on_phase: on_phase("notes", "running")
         on_log("Step 3: Generating detailed revision notes for each chapter...")
         detailed_notes_sections: list[str] = []
         total_chapters = len(chapters)
@@ -305,8 +316,17 @@ def _run_llm_pipeline(
             word_count = len(ch_text.split())
 
             if cancel_event.is_set():
+                if on_phase: on_phase("notes", "cancelled")
                 on_log("Pipeline cancelled by user.")
-                break
+                return {
+                    "success": False,
+                    "status": "cancelled",
+                    "course_dir": course_dir,
+                    "detailed_path": "",
+                    "practical_path": "",
+                    "kag_html_path": "",
+                    "error": "Cancelled by user"
+                }
 
             # Check checkpoint — skip if already done
             if str(idx) in completed_notes:
@@ -364,9 +384,17 @@ def _run_llm_pipeline(
             for attempt in range(max_retries):
                 # Wait for rate limiter inside the retry loop
                 if not limiter.wait_if_needed(est_tokens, cancel_event, on_log):
+                    if on_phase: on_phase("notes", "cancelled")
                     on_log("Pipeline cancelled by user.")
-                    pipeline_cancelled = True
-                    break
+                    return {
+                        "success": False,
+                        "status": "cancelled",
+                        "course_dir": course_dir,
+                        "detailed_path": "",
+                        "practical_path": "",
+                        "kag_html_path": "",
+                        "error": "Cancelled by user"
+                    }
 
                 try:
                     response = call_llm(
@@ -414,8 +442,16 @@ def _run_llm_pipeline(
                         )
                         # Interruptible cooldown
                         if cancel_event.wait(retry_delay):
-                            pipeline_cancelled = True
-                            break
+                            if on_phase: on_phase("notes", "cancelled")
+                            return {
+                                "success": False,
+                                "status": "cancelled",
+                                "course_dir": course_dir,
+                                "detailed_path": "",
+                                "practical_path": "",
+                                "kag_html_path": "",
+                                "error": "Cancelled by user"
+                            }
                         active_pool.reset_cycle()
                         limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                         retry_delay *= 2  # Exponential backoff (for the next attempt, if any)
@@ -426,9 +462,6 @@ def _run_llm_pipeline(
                         )
                         response = None
             
-            if pipeline_cancelled:
-                break
-
             if response:
                 if assigned_frames:
                     frame_markdown = "\n\n### Key Visuals\n"
@@ -464,8 +497,19 @@ def _run_llm_pipeline(
             on_progress(idx + 1, total_chapters)
 
             if cancel_event.is_set():
+                if on_phase: on_phase("notes", "cancelled")
                 on_log("Pipeline cancelled by user.")
-                break
+                return {
+                    "success": False,
+                    "status": "cancelled",
+                    "course_dir": course_dir,
+                    "detailed_path": "",
+                    "practical_path": "",
+                    "kag_html_path": "",
+                    "error": "Cancelled by user"
+                }
+
+        if on_phase: on_phase("notes", "completed")
 
         # ------------------------------------------------------------------
         # Assemble Course_Detailed_Notes.md
@@ -525,6 +569,7 @@ def _run_llm_pipeline(
         # ------------------------------------------------------------------
         # Step 4: Call LLM to generate Practical Cheat-sheet
         # ------------------------------------------------------------------
+        if on_phase: on_phase("practical", "running")
         on_log("Step 4: Generating Course Practical Cheat-Sheet & Summary...")
 
         course_chapters_outline = ""
@@ -573,7 +618,6 @@ def _run_llm_pipeline(
         max_retries = 3
         retry_delay = 20
         practical_summary = None
-        pipeline_cancelled = False
         system_prompt_summary = (
             "You are an expert technical note-writer and "
             "instructional designer. Your task is to write a "
@@ -584,15 +628,31 @@ def _run_llm_pipeline(
 
         for attempt in range(max_retries):
             if cancel_event.is_set():
+                if on_phase: on_phase("practical", "cancelled")
                 on_log("Pipeline cancelled by user.")
-                pipeline_cancelled = True
-                break
+                return {
+                    "success": False,
+                    "status": "cancelled",
+                    "course_dir": course_dir,
+                    "detailed_path": detailed_path,
+                    "practical_path": "",
+                    "kag_html_path": "",
+                    "error": "Cancelled by user"
+                }
             
             # Wait for rate limiter inside the retry loop
             if not limiter.wait_if_needed(est_tokens_summary, cancel_event, on_log):
+                if on_phase: on_phase("practical", "cancelled")
                 on_log("Pipeline cancelled by user.")
-                pipeline_cancelled = True
-                break
+                return {
+                    "success": False,
+                    "status": "cancelled",
+                    "course_dir": course_dir,
+                    "detailed_path": detailed_path,
+                    "practical_path": "",
+                    "kag_html_path": "",
+                    "error": "Cancelled by user"
+                }
 
             try:
                 practical_summary = call_llm(
@@ -634,8 +694,16 @@ def _run_llm_pipeline(
                     )
                     # Interruptible cooldown
                     if cancel_event.wait(retry_delay):
-                        pipeline_cancelled = True
-                        break
+                        if on_phase: on_phase("practical", "cancelled")
+                        return {
+                            "success": False,
+                            "status": "cancelled",
+                            "course_dir": course_dir,
+                            "detailed_path": detailed_path,
+                            "practical_path": "",
+                            "kag_html_path": "",
+                            "error": "Cancelled by user"
+                        }
                     active_pool.reset_cycle()
                     limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                     retry_delay *= 2  # Exponential backoff
@@ -647,12 +715,13 @@ def _run_llm_pipeline(
                         f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
                         f"[Failed to generate cheat-sheet using LLM: {e}]\n"
                     )
+                    final_status = "degraded"
 
-        if pipeline_cancelled and not practical_summary:
-            practical_summary = (
-                f"# {video_title or 'Course'} Practical Cheat-Sheet & Summary\n\n"
-                "[Skipped due to pipeline cancellation]\n"
-            )
+        if practical_summary:
+            if on_phase: on_phase("practical", "completed")
+        else:
+            if on_phase: on_phase("practical", "degraded")
+            final_status = "degraded"
 
         practical_path = os.path.join(course_dir, f"{slug}_Practical_Notes.md")
         with open(practical_path, "w", encoding="utf-8") as f:
@@ -663,6 +732,7 @@ def _run_llm_pipeline(
         # Step 5: Generate Knowledge Graph
         # ------------------------------------------------------------------
         if enable_kag:
+            if on_phase: on_phase("kag", "running")
             on_log("Step 5: Generating Knowledge Graph...")
             try:
                 from src.knowledge_graph import extract_concepts, build_graph, render_html
@@ -682,8 +752,11 @@ def _run_llm_pipeline(
                 with open(kag_html_path, "w", encoding="utf-8") as f:
                     f.write(html_content)
                 on_log(f"Knowledge Graph saved to: {kag_html_path}")
+                if on_phase: on_phase("kag", "completed")
             except Exception as e:
                 on_log(f"WARNING: Knowledge Graph generation failed: {e}. Skipping.")
+                if on_phase: on_phase("kag", "degraded")
+                final_status = "degraded"
 
         on_log("=== PIPELINE COMPLETED SUCCESSFULLY ===")
         # Clean up checkpoint file on success
@@ -694,6 +767,7 @@ def _run_llm_pipeline(
                 on_log(f"WARNING: Checkpoint cleanup failed: {e}")
         return {
             "success": True,
+            "status": final_status,
             "course_dir": course_dir,
             "detailed_path": detailed_path,
             "practical_path": practical_path,
@@ -705,6 +779,7 @@ def _run_llm_pipeline(
         on_log(f"CRITICAL ERROR in pipeline: {e}")
         return {
             "success": False,
+            "status": "failed",
             "course_dir": course_dir if 'course_dir' in locals() else "",
             "detailed_path": detailed_path,
             "practical_path": practical_path,
