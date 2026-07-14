@@ -25,8 +25,8 @@ const Library = () => {
     loadLibrary();
   }, []);
 
-  const handleCourseClick = (course, index) => {
-    setActiveCourseDir({ ...course, id: index });
+  const handleCourseClick = (course) => {
+    setActiveCourseDir({ ...course });
     setCurrentScreen('courseWorkspace');
   };
 
@@ -86,10 +86,10 @@ const Library = () => {
         <div className="course-grid">
           {courses.map((course, index) => (
             <CourseCard 
-              key={index} 
+              key={course.id || index} 
               course={course} 
               isRecent={index === 0}
-              onClick={() => handleCourseClick(course, index)} 
+              onClick={() => handleCourseClick(course)} 
             />
           ))}
           <div 

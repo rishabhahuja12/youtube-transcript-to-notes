@@ -8,6 +8,8 @@ import os
 import sys
 import tempfile
 import urllib.request
+import uuid
+from pathlib import Path
 from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
@@ -55,7 +57,7 @@ class LibraryAddRequest(BaseModel):
 
 class PdfExportRequest(BaseModel):
     """Request body for exporting markdown to PDF."""
-    course_id: int
+    course_id: str
     filename: str
     theme: str = "Textbook"
 
@@ -74,10 +76,12 @@ class CourseBadges(BaseModel):
 
 class CourseInfo(BaseModel):
     """Summary info for a single course in the library."""
+    id: str
     title: str
     path: str
     date: str
     badges: CourseBadges
+    status: str = "complete"
 
 
 class FileInfo(BaseModel):
@@ -104,82 +108,78 @@ class HealthStatus(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _load_recent_outputs() -> List[str]:
-    """Load the list of recently used output directories.
-
-    Returns:
-        List of directory path strings from config.json.
-    """
+def _load_library_entries() -> List[Dict[str, Any]]:
+    """Load the list of library entries."""
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data.get("recent_outputs", [])
+                
+            entries = data.get("library", [])
+            if not entries and "recent_outputs" in data:
+                for p in data["recent_outputs"]:
+                    entries.append({
+                        "id": f"course_{uuid.uuid4().hex}",
+                        "path": p,
+                        "title": os.path.basename(p) or p,
+                        "status": "complete"
+                    })
+            return entries
         except (json.JSONDecodeError, OSError):
             return []
     return []
 
-
-def _add_recent_output(path: str) -> None:
-    """Add an output directory path to the recent list.
-
-    Args:
-        path: The directory path to store.
-    """
+def _add_library_entry(path: str, title: str = "") -> Dict[str, Any]:
+    """Add an output directory path to the library."""
     if not path:
-        return
+        return {}
     path = os.path.abspath(path)
     if not os.path.isdir(path):
-        return
-    data: Dict[str, Any] = {}
+        return {}
+        
+    entries = _load_library_entries()
+    entries = [e for e in entries if e.get("path") != path]
+    
+    entry_id = f"course_{uuid.uuid4().hex}"
+    if not title:
+        title = os.path.basename(path) or path
+        
+    new_entry = {
+        "id": entry_id,
+        "path": path,
+        "title": title,
+        "status": "complete",
+        "badges": {}
+    }
+    entries.insert(0, new_entry)
+    
     try:
+        data = {}
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        data = {}
-
-    recents = data.get("recent_outputs", [])
-    if path in recents:
-        recents.remove(path)
-    recents.insert(0, path)
-    recents = recents[:10]
-    data["recent_outputs"] = recents
-
-    try:
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        
+        data["library"] = entries
+        
+        fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
-    except OSError:
-        pass
+        os.replace(tmp_path, CONFIG_PATH)
+    except OSError as e:
+        logging.error(f"Error saving library: {e}")
+        
+    return new_entry
 
-
-def _resolve_course_dir(course_id: int) -> str:
-    """Resolve a course index to a validated directory path.
-
-    Args:
-        course_id: Integer index into the recent_outputs list.
-
-    Returns:
-        Absolute directory path for the course.
-
-    Raises:
-        HTTPException: If the index is out of bounds or invalid.
-    """
-    outputs = _load_recent_outputs()
-    if course_id < 0 or course_id >= len(outputs):
-        logging.error(f"Invalid course_id requested: {course_id}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Invalid course_id: {course_id}",
-        )
-    course_dir = outputs[course_id]
-    if not os.path.isdir(course_dir):
-        logging.error(f"Course directory does not exist: {course_dir}")
-        raise HTTPException(
-            status_code=404,
-            detail="Course directory does not exist.",
-        )
-    return course_dir
+def _resolve_course_dir(course_id: str) -> str:
+    """Resolve a course ID to a validated directory path."""
+    entries = _load_library_entries()
+    for entry in entries:
+        if str(entry.get("id")) == str(course_id):
+            course_dir = entry.get("path")
+            if not os.path.isdir(course_dir):
+                raise HTTPException(status_code=404, detail="Course directory does not exist.")
+            return course_dir
+    raise HTTPException(status_code=404, detail=f"Invalid course_id: {course_id}")
 
 
 def _check_ollama() -> bool:
@@ -333,10 +333,11 @@ async def get_library() -> List[CourseInfo]:
     Returns:
         List[CourseInfo]: List of course objects with metadata.
     """
-    outputs = _load_recent_outputs()
+    entries = _load_library_entries()
     courses: List[CourseInfo] = []
-    for path in outputs:
-        title = os.path.basename(path) or path
+    for entry in entries:
+        path = entry.get("path", "")
+        title = entry.get("title", os.path.basename(path) or path)
         date = ""
         try:
             stat = os.stat(path)
@@ -345,22 +346,22 @@ async def get_library() -> List[CourseInfo]:
         except OSError:
             date = "Unknown"
         badges = _detect_badges(path)
-        courses.append(CourseInfo(title=title, path=path, date=date, badges=badges))
+        courses.append(CourseInfo(
+            id=entry.get("id"),
+            title=title,
+            path=path,
+            date=date,
+            badges=badges,
+            status=entry.get("status", "complete")
+        ))
     return courses
 
 
 @app.post("/content/library/add")
-async def add_library_entry(req: LibraryAddRequest) -> Dict[str, bool]:
-    """Add a directory path to the library's recent outputs.
-    
-    Args:
-        req: Request containing the path.
-        
-    Returns:
-        Dict[str, bool]: Success status.
-    """
-    _add_recent_output(req.path)
-    return {"success": True}
+async def add_library_entry(req: LibraryAddRequest) -> Dict[str, Any]:
+    """Add a directory path to the library's recent outputs."""
+    entry = _add_library_entry(req.path)
+    return entry
 
 @app.get("/content/browse-directory")
 def browse_directory() -> Dict[str, str]:
@@ -383,7 +384,7 @@ def browse_directory() -> Dict[str, str]:
 
 
 @app.get("/content/course/{id}/files", response_model=List[FileInfo])
-async def get_course_files(id: int) -> List[FileInfo]:
+async def get_course_files(id: str) -> List[FileInfo]:
     """List files in a course output directory.
     
     Args:
@@ -407,29 +408,35 @@ async def get_course_files(id: int) -> List[FileInfo]:
 
 
 @app.get("/content/course/{id}/notes/{file}")
-async def get_course_notes(id: int, file: str) -> Dict[str, str]:
+async def get_course_notes(id: str, file: str) -> Dict[str, str]:
     """Read and return a markdown file from the course directory.
     
     Args:
-        id: Integer index of the course.
+        id: Course UUID.
         file: The requested filename.
         
     Returns:
         Dict[str, str]: The content of the markdown file.
     """
     course_dir = _resolve_course_dir(id)
-    safe_name = os.path.basename(file)
-    if safe_name != file or ".." in file:
-        logging.error(f"Invalid filename requested: {file}")
+    course_root = Path(course_dir).resolve()
+    try:
+        requested_path = (course_root / file).resolve()
+    except Exception:
         raise HTTPException(status_code=403, detail="Invalid filename.")
-    if not safe_name.endswith(".md"):
-        logging.error(f"Non-markdown file requested: {safe_name}")
+        
+    if not str(requested_path).startswith(str(course_root)):
+        logging.error(f"Path traversal blocked: {file}")
+        raise HTTPException(status_code=403, detail="Invalid filename.")
+        
+    if not requested_path.name.endswith(".md"):
+        logging.error(f"Non-markdown file requested: {requested_path.name}")
         raise HTTPException(status_code=400, detail="Only .md files can be read.")
-
-    filepath = os.path.join(course_dir, safe_name)
+        
+    filepath = str(requested_path)
     if not os.path.isfile(filepath):
         logging.error(f"Notes file not found: {filepath}")
-        raise HTTPException(status_code=404, detail=f"File not found: {safe_name}")
+        raise HTTPException(status_code=404, detail=f"File not found: {file}")
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
@@ -440,7 +447,7 @@ async def get_course_notes(id: int, file: str) -> Dict[str, str]:
 
 
 @app.get("/content/course/{id}/graph")
-async def get_course_graph(id: int) -> Dict[str, str]:
+async def get_course_graph(id: str) -> Dict[str, str]:
     """Read and return knowledge graph HTML from course dir.
     
     Args:
@@ -472,7 +479,7 @@ async def get_course_graph(id: int) -> Dict[str, str]:
 
 
 @app.get("/content/course/{id}/keyframes", response_model=List[KeyframeInfo])
-async def get_course_keyframes(id: int) -> List[KeyframeInfo]:
+async def get_course_keyframes(id: str) -> List[KeyframeInfo]:
     """List keyframe images in the course directory.
     
     Args:
@@ -496,23 +503,28 @@ async def get_course_keyframes(id: int) -> List[KeyframeInfo]:
 
 
 @app.get("/static/{id}/{filename}")
-async def serve_static_file(id: int, filename: str) -> FileResponse:
+async def serve_static_file(id: str, filename: str) -> FileResponse:
     """Serve a static file from a validated course directory.
     
     Args:
-        id: Integer index of the course.
+        id: Course UUID.
         filename: Name of the file to serve.
         
     Returns:
         FileResponse: The requested static file.
     """
     course_dir = _resolve_course_dir(id)
-    safe_name = os.path.basename(filename)
-    if safe_name != filename or ".." in filename:
-        logging.error(f"Invalid static filename requested: {filename}")
+    course_root = Path(course_dir).resolve()
+    try:
+        requested_path = (course_root / filename).resolve()
+    except Exception:
         raise HTTPException(status_code=403, detail="Invalid filename.")
-
-    filepath = os.path.join(course_dir, safe_name)
+        
+    if not str(requested_path).startswith(str(course_root)):
+        logging.error(f"Path traversal blocked: {filename}")
+        raise HTTPException(status_code=403, detail="Invalid filename.")
+        
+    filepath = str(requested_path)
     if not os.path.isfile(filepath):
         logging.error(f"Static file not found: {filepath}")
         raise HTTPException(status_code=404, detail="File not found.")
@@ -720,15 +732,21 @@ async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
         Dict[str, str]: Path to the generated PDF.
     """
     course_dir = _resolve_course_dir(req.course_id)
-    safe_name = os.path.basename(req.filename)
-    if safe_name != req.filename or ".." in req.filename:
-        logging.error(f"Invalid PDF export filename requested: {req.filename}")
+    course_root = Path(course_dir).resolve()
+    try:
+        requested_path = (course_root / req.filename).resolve()
+    except Exception:
         raise HTTPException(status_code=403, detail="Invalid filename.")
-    if not safe_name.endswith(".md"):
-        logging.error(f"Non-markdown file requested for PDF export: {safe_name}")
+        
+    if not str(requested_path).startswith(str(course_root)):
+        logging.error(f"Path traversal blocked for PDF: {req.filename}")
+        raise HTTPException(status_code=403, detail="Invalid filename.")
+        
+    if not requested_path.name.endswith(".md"):
+        logging.error(f"Non-markdown file requested for PDF export: {requested_path.name}")
         raise HTTPException(status_code=400, detail="Only .md files can be exported.")
 
-    md_path = os.path.join(course_dir, safe_name)
+    md_path = str(requested_path)
     if not os.path.isfile(md_path):
         logging.error(f"Markdown file not found for PDF export: {md_path}")
         raise HTTPException(status_code=400, detail="Markdown file not found.")

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
-import { startPipeline, connectPipelineWebSocket, addCourseToLibrary, browseDirectory } from '../utils/api';
+import { startPipeline, connectPipelineWebSocket, browseDirectory } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check } from 'lucide-react';
 
 const extractVideoId = (url) => {
@@ -91,14 +91,9 @@ const NewPipeline = () => {
           } else {
              setPipelineStatus('completed');
              addLog('Pipeline completed successfully!', 'success');
-             if (msg.course_dir) {
-                addCourseToLibrary(msg.course_dir).then(() => {
-                   setActiveCourseDir({ path: msg.course_dir, id: 0 });
-                   setCurrentScreen('courseWorkspace');
-                }).catch(() => {
-                   setActiveCourseDir({ path: msg.course_dir, id: 0 });
-                   setCurrentScreen('courseWorkspace');
-                });
+             if (msg.course_record) {
+                setActiveCourseDir(msg.course_record);
+                setCurrentScreen('courseWorkspace');
              } else {
                 setCurrentScreen('courseWorkspace');
              }

@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from gateway.content_service import app, _load_recent_outputs, _mask_key
+from gateway.content_service import app, _load_library_entries, _mask_key
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Fixtures
@@ -132,7 +132,9 @@ async def test_course_files(
 ) -> None:
     """GET /content/course/0/files should list files."""
     async with _client() as client:
-        resp = await client.get("/content/course/0/files")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/content/course/{course_id}/files")
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
@@ -144,7 +146,9 @@ async def test_course_notes(
 ) -> None:
     """GET /content/course/0/notes/file.md returns content."""
     async with _client() as client:
-        resp = await client.get("/content/course/0/notes/Test_Detailed_Notes.md")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/content/course/{course_id}/notes/Test_Detailed_Notes.md")
     assert resp.status_code == 200
     data = resp.json()
     assert "content" in data
@@ -156,7 +160,9 @@ async def test_course_graph(
 ) -> None:
     """GET /content/course/0/graph returns HTML content."""
     async with _client() as client:
-        resp = await client.get("/content/course/0/graph")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/content/course/{course_id}/graph")
     assert resp.status_code == 200
     data = resp.json()
     assert "html" in data
@@ -168,7 +174,9 @@ async def test_course_keyframes(
 ) -> None:
     """GET /content/course/0/keyframes returns image list."""
     async with _client() as client:
-        resp = await client.get("/content/course/0/keyframes")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/content/course/{course_id}/keyframes")
     assert resp.status_code == 200
     data = resp.json()
     assert isinstance(data, list)
@@ -180,7 +188,9 @@ async def test_static_file_serving(
 ) -> None:
     """GET /static/0/keyframe_001.jpg serves the file."""
     async with _client() as client:
-        resp = await client.get("/static/0/keyframe_001.jpg")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/static/{course_id}/keyframe_001.jpg")
     assert resp.status_code == 200
 
 
@@ -190,7 +200,9 @@ async def test_notes_path_traversal(
 ) -> None:
     """GET /content/course/0/notes/../etc returns 403 or 404."""
     async with _client() as client:
-        resp = await client.get("/content/course/0/notes/..%2F..%2Fetc%2Fpasswd")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/content/course/{course_id}/notes/..%2F..%2Fetc%2Fpasswd")
     assert resp.status_code in (403, 404)
 
 
@@ -200,7 +212,9 @@ async def test_static_path_traversal(
 ) -> None:
     """GET /static/0/../etc returns 403 or 404."""
     async with _client() as client:
-        resp = await client.get("/static/0/..%2F..%2Fetc%2Fpasswd")
+        lib_resp = await client.get("/content/library")
+        course_id = lib_resp.json()[0]["id"]
+        resp = await client.get(f"/static/{course_id}/..%2F..%2Fetc%2Fpasswd")
     assert resp.status_code in (403, 404)
 
 
@@ -301,7 +315,7 @@ async def test_pdf_export_missing_file(mock_config: str, tmp_course_dir: str) ->
         resp = await client.post(
             "/pdf/export",
             json={
-                "course_id": 0,
+                "course_id": "invalid_id",
                 "filename": "does_not_exist.md",
                 "theme": "Textbook",
             },
@@ -321,10 +335,12 @@ async def test_pdf_export_success(mock_config: str, tmp_course_dir: str) -> None
         mock_browser.new_page.return_value = mock_page
 
         async with _client() as client:
+            lib_resp = await client.get("/content/library")
+            course_id = lib_resp.json()[0]["id"]
             resp = await client.post(
                 "/pdf/export",
                 json={
-                    "course_id": 0,
+                    "course_id": course_id,
                     "filename": "Test_Detailed_Notes.md",
                     "theme": "Textbook",
                 },

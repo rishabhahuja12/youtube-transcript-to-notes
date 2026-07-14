@@ -176,10 +176,11 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
         job.status = result.get("status", "completed" if result.get("success") else "failed")
         course_path = result.get("course_dir") or (os.path.dirname(result.get("detailed_path", "")) if result.get("detailed_path") else "")
         success = result.get("success", False)
+        course_record = None
         if success and course_path and os.path.isdir(course_path):
-            from gateway.content_service import _add_recent_output
-            _add_recent_output(course_path)
-        msg = {"type": "complete", "success": success, "status": job.status, "course_dir": course_path, "result": result}
+            from gateway.content_service import _add_library_entry
+            course_record = _add_library_entry(course_path)
+        msg = {"type": "complete", "success": success, "status": job.status, "course_dir": course_path, "course_record": course_record, "result": result}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     except Exception as e:
         logging.error(f"Pipeline worker failed: {e}")

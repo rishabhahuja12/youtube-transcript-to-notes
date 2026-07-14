@@ -46,54 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Helper Functions
-# ═══════════════════════════════════════════════════════════════════════
-
-
-def _load_recent_outputs() -> List[str]:
-    """Load the list of recently used output directories.
-
-    Returns:
-        List of directory path strings from config.json.
-    """
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get("recent_outputs", [])
-        except (json.JSONDecodeError, OSError):
-            return []
-    return []
-
-
-def _resolve_course_dir(course_id: int) -> str:
-    """Resolve a course index to a validated directory path.
-
-    Args:
-        course_id: Integer index into the recent_outputs list.
-
-    Returns:
-        Absolute directory path for the course.
-
-    Raises:
-        HTTPException: If the index is out of bounds or invalid.
-    """
-    outputs = _load_recent_outputs()
-    if course_id < 0 or course_id >= len(outputs):
-        logging.error(f"Invalid course_id requested: {course_id}")
-        raise HTTPException(
-            status_code=404,
-            detail=f"Invalid course_id: {course_id}",
-        )
-    course_dir = outputs[course_id]
-    if not os.path.isdir(course_dir):
-        logging.error(f"Course directory does not exist: {course_dir}")
-        raise HTTPException(
-            status_code=404,
-            detail="Course directory does not exist.",
-        )
-    return course_dir
+from gateway.content_service import _resolve_course_dir
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Pydantic Models
@@ -102,7 +55,7 @@ def _resolve_course_dir(course_id: int) -> str:
 
 class ChatRequest(BaseModel):
     """Request body for sending a chat message."""
-    course_id: int
+    course_id: str
     message: str
     model: str = "llama3"
 

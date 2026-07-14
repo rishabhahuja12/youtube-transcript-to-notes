@@ -34,7 +34,7 @@ def mock_config(
     config_file.write_text(
         json.dumps(config_data), encoding="utf-8"
     )
-    with patch("gateway.chat_service.CONFIG_PATH", str(config_file)):
+    with patch("gateway.content_service.CONFIG_PATH", str(config_file)):
         yield str(config_file)
 
 
@@ -62,7 +62,7 @@ async def test_chat_send_invalid_dir(mock_config: str) -> None:
         resp = await client.post(
             "/chat/send",
             json={
-                "course_id": 999,
+                "course_id": "999",
                 "message": "Hello",
                 "model": "llama3",
             },
@@ -73,6 +73,9 @@ async def test_chat_send_invalid_dir(mock_config: str) -> None:
 @pytest.mark.asyncio
 async def test_chat_send_success(mock_config: str, tmp_course_dir: str) -> None:
     """Chat successfully sends a message."""
+    from gateway.content_service import _load_library_entries
+    course_id = _load_library_entries()[0]["id"]
+    
     with patch("src.chat.ChatSession") as mock_chat_class:
         mock_instance = MagicMock()
         mock_instance.send.return_value = "Mock response"
@@ -85,7 +88,7 @@ async def test_chat_send_success(mock_config: str, tmp_course_dir: str) -> None:
             resp = await client.post(
                 "/chat/send",
                 json={
-                    "course_id": 0,
+                    "course_id": course_id,
                     "message": "Hello",
                     "model": "llama3",
                 },
