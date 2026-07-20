@@ -10,3 +10,12 @@ config.json
 pipeline.log
 graphify-out/
 client_secret.json
+config.json.lock
+.pytest_cache/
+test_output/
+test*.pdf
+temp_plan.md
+app_legacy.py
+extract_plan.py
+merge_plan.py
+implementation_*.md

@@ -101,5 +101,17 @@ def get_provider_pool_or_legacy() -> "ProviderPool":
     if pool_json:
         return ProviderPool.from_json(pool_json)
 
+    # Attempt legacy migration if no pool exists
+    legacy_key = get_credential(KEY_API_KEY)
+    if legacy_key:
+        provider = get_credential(KEY_PROVIDER) or "groq"
+        url = get_credential(KEY_ENDPOINT_URL)
+        model = get_credential(KEY_MODEL_NAME)
+        
+        pool = ProviderPool.from_legacy(provider, url, legacy_key, model)
+        # Save immediately to the new format so we don't need to migrate again
+        store_provider_pool(pool.to_json())
+        return pool
+
     return ProviderPool([])
 
