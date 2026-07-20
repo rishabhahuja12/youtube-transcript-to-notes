@@ -1,29 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import CourseCard from '../components/CourseCard';
 import { fetchLibrary } from '../utils/api';
 import { useAppContext } from '../context/AppContext';
-import { RefreshCw, BookOpen, Plus } from 'lucide-react';
+import { RefreshCw, BookOpen, Plus, Search, Filter } from 'lucide-react';
 
 const Library = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { setCurrentScreen, setActiveCourseDir } = useAppContext();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('date');
+  const { setCurrentScreen, setActiveCourseDir, activeJobId, pipelineStatus } = useAppContext();
+
+  const loadLibrary = async () => {
+    try {
+      setLoading(true);
+      const data = await fetchLibrary();
+      setCourses(data || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load library');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadLibrary = async () => {
-      try {
-        setLoading(true);
-        const data = await fetchLibrary();
-        setCourses(data || []);
-      } catch (err) {
-        setError(err.message || 'Failed to load library');
-      } finally {
-        setLoading(false);
-      }
-    };
     loadLibrary();
-  }, []);
+  }, [activeJobId, pipelineStatus]);
 
   const handleCourseClick = (course) => {
     setActiveCourseDir({ ...course });
@@ -34,7 +37,21 @@ const Library = () => {
     setCurrentScreen('newPipeline');
   };
 
-  if (loading) {
+  const filteredAndSortedCourses = useMemo(() => {
+    let result = courses.filter(course => 
+      course.title?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    
+    if (sortBy === 'date') {
+      result.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    } else if (sortBy === 'status') {
+      result.sort((a, b) => (a.status || '').localeCompare(b.status || ''));
+    }
+    
+    return result;
+  }, [courses, searchQuery, sortBy]);
+
+  if (loading && courses.length === 0) {
     return (
       <div className="library-page fade-in">
         <div className="empty-state panel-card">
@@ -68,8 +85,25 @@ const Library = () => {
           <h2 className="serif-heading">Library</h2>
           <span className="course-count mono-text">{courses.length} courses</span>
         </div>
-        <div className="search-field">
-          <input type="text" placeholder="Search courses..." className="text-input search-input" />
+        <div className="search-field library-controls">
+          <div className="search-input-wrapper">
+            <Search size={16} className="search-icon" />
+            <input 
+              type="text" 
+              placeholder="Search courses..." 
+              className="text-input search-input"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <select 
+            className="text-input sort-select" 
+            value={sortBy} 
+            onChange={e => setSortBy(e.target.value)}
+          >
+            <option value="date">Sort by Date</option>
+            <option value="status">Sort by Status</option>
+          </select>
         </div>
       </div>
       
@@ -84,13 +118,17 @@ const Library = () => {
         </div>
       ) : (
         <div className="course-grid">
-          {courses.map((course, index) => (
-            <CourseCard 
-              key={course.id || index} 
-              course={course} 
-              isRecent={index === 0}
-              onClick={() => handleCourseClick(course)} 
-            />
+          {filteredAndSortedCourses.map((course, index) => (
+            <div key={course.id || index} className="course-card-wrapper">
+               <CourseCard 
+                 course={course} 
+                 isRecent={index === 0 && sortBy === 'date' && searchQuery === ''}
+                 onClick={() => handleCourseClick(course)} 
+               />
+               <span className={`status-badge-overlay ${course.status}`}>
+                  {course.status || 'complete'}
+               </span>
+            </div>
           ))}
           <div 
             className="panel-card course-card new-course-tile" 

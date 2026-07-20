@@ -227,3 +227,16 @@ export const browseDirectory = async () => {
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
+
+export const browseFile = async () => {
+  const response = await fetch(`${API_BASE_URL}/api/content/browse-file`, {
+    signal: AbortSignal.timeout(300000) // 5 minutes timeout for user to pick file
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const getProviderStatus = async () => {
+  const data = await fetchPoolSettings();
+  return data && data.length > 0;
+};

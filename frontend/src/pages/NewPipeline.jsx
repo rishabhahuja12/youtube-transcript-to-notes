@@ -1,20 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
-import { startPipeline, connectPipelineWebSocket, browseDirectory } from '../utils/api';
-import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check } from 'lucide-react';
+import { startPipeline, connectPipelineWebSocket, browseDirectory, browseFile, getProviderStatus } from '../utils/api';
+import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check, File } from 'lucide-react';
 
 const extractVideoId = (url) => {
+  if (!url) return null;
   const match = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : null;
 };
 
 const NewPipeline = () => {
-  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus, setActiveCourseDir } = useAppContext();
-  const [inputType, setInputType] = useState('youtube'); // 'youtube' or 'local'
+  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus, setActiveCourseDir, setActiveJobId, pipelineProgress } = useAppContext();
+  const [inputType, setInputType] = useState('youtube');
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
   const [outputDir, setOutputDir] = useState('');
+  
+  const [transcriptPath, setTranscriptPath] = useState('');
+  const [outlinePath, setOutlinePath] = useState('');
   
   const [powerUps, setPowerUps] = useState({
     vision: false,
@@ -24,15 +28,46 @@ const NewPipeline = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  
+  const wsRef = useRef(null);
+  
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
 
-  const handleBrowse = async () => {
+  const [youtubeStatus, setYoutubeStatus] = React.useState(false);
+  React.useEffect(() => {
+    import('../utils/api').then(({fetchYouTubeStatus}) => {
+      fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
+    });
+  }, []);
+
+  const handleBrowseDir = async () => {
     try {
       const data = await browseDirectory();
-      if (data && data.path) {
-        setOutputDir(data.path);
-      }
+      if (data && data.path) setOutputDir(data.path);
     } catch (err) {
       console.error('Browse failed:', err);
+    }
+  };
+  
+  const handleBrowseTranscript = async () => {
+    try {
+      const data = await browseFile();
+      if (data && data.path) setTranscriptPath(data.path);
+    } catch (err) {
+      console.error('Browse file failed:', err);
+    }
+  };
+
+  const handleBrowseOutline = async () => {
+    try {
+      const data = await browseFile();
+      if (data && data.path) setOutlinePath(data.path);
+    } catch (err) {
+      console.error('Browse file failed:', err);
     }
   };
 
@@ -42,37 +77,63 @@ const NewPipeline = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!url) {
-      setError("Please enter a valid URL or path");
-      return;
+    
+    // Preflight Validation
+    if (!outputDir) {
+       setError("Please select an output directory.");
+       return;
+    }
+    
+    const hasProviders = await getProviderStatus().catch(() => false);
+    if (!hasProviders) {
+       setError("No providers configured in the pool. Please add a provider in Settings.");
+       return;
     }
     
     if (inputType === 'youtube') {
+      if (!url) {
+        setError("Please enter a valid YouTube URL");
+        return;
+      }
       const ytRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
       if (!ytRegex.test(url)) {
         setError("Please enter a valid YouTube URL");
         return;
+      }
+      if (!youtubeStatus) {
+         setError("YouTube OAuth is not connected. Connect in Settings.");
+         return;
+      }
+    } else {
+      if (!transcriptPath || !outlinePath) {
+         setError("Please select both a transcript and an outline file for Local mode.");
+         return;
       }
     }
 
     try {
       setIsSubmitting(true);
       setError(null);
-      setPipelineStatus('running');
       setPipelineProgress({ current: 0, total: 100 });
       
       const isYoutube = inputType === 'youtube';
       const payload = {
-        output_dir: outputDir || "output",
+        output_dir: outputDir,
         youtube_url: isYoutube ? url : "",
-        transcript_path: !isYoutube ? url : "",
+        transcript_path: !isYoutube ? transcriptPath : "",
+        outline_path: !isYoutube ? outlinePath : "", 
         is_url_pipeline: isYoutube,
-        video_title: topic || "Course",
+        video_title: topic.trim() === '' ? null : topic,
         enable_multimodal: powerUps.vision || false,
         enable_kag: powerUps.kag || false
       };
       
-      const wsConnection = connectPipelineWebSocket((msg) => {
+      const res = await startPipeline(payload);
+      const jobId = res.job_id;
+      setActiveJobId(jobId);
+      setPipelineStatus('running');
+      
+      wsRef.current = connectPipelineWebSocket((msg) => {
         if (msg.type === 'log') {
           addLog(msg.message, msg.level || 'info');
           if (msg.message.includes('No Google OAuth credentials found') && inputType === 'youtube') {
@@ -82,10 +143,12 @@ const NewPipeline = () => {
           }
         } else if (msg.type === 'progress') {
           setPipelineProgress({ current: msg.current, total: msg.total });
+        } else if (msg.type === 'phase') {
+          addLog(`Phase ${msg.phase} status: ${msg.status}`, 'info');
         } else if (msg.type === 'complete') {
-          if (wsConnection) wsConnection.close();
+          if (wsRef.current) wsRef.current.close();
           if (msg.success === false) {
-             setPipelineStatus('error');
+             setPipelineStatus('failed');
              addLog(`Pipeline failed to complete: ${msg.result?.error || 'Unknown error'}`, 'error');
              setError(msg.result?.error || 'Pipeline failed to complete');
           } else {
@@ -99,30 +162,20 @@ const NewPipeline = () => {
              }
           }
         } else if (msg.type === 'error') {
-          if (wsConnection) wsConnection.close();
-          setPipelineStatus('error');
+          if (wsRef.current) wsRef.current.close();
+          setPipelineStatus('failed');
           addLog(`Pipeline error: ${msg.message}`, 'error');
           setError(err => err || msg.message);
         }
       });
       
-      await startPipeline(payload);
-      setPipelineStatus('running');
-      
-      
     } catch (err) {
       setError(err.message || 'Failed to start pipeline');
+      setPipelineStatus('failed');
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const [youtubeStatus, setYoutubeStatus] = React.useState(false);
-  React.useEffect(() => {
-    import('../utils/api').then(({fetchYouTubeStatus}) => {
-      fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
-    });
-  }, []);
 
   return (
     <div className="new-pipeline-page fade-in">
@@ -154,21 +207,49 @@ const NewPipeline = () => {
               Local Files
             </button>
           </div>
-
+          
           <div className="input-field">
-            <label htmlFor="source-url">
-              {inputType === 'youtube' ? 'YouTube Video or Playlist URL' : 'Local Directory Path'}
-            </label>
-            <input 
-              id="source-url"
-              type="text" 
-              className="text-input" 
-              placeholder={inputType === 'youtube' ? 'https://youtube.com/watch?v=...' : 'C:\\path\\to\\files'}
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              required
-            />
+             <label htmlFor="output-dir">Output Directory (Required)</label>
+             <div className="input-group">
+               <button 
+                 type="button" 
+                 onClick={handleBrowseDir} 
+                 className="secondary-button browse-button"
+               >
+                 <Folder size={18} /> {outputDir || "Browse Output Directory"}
+               </button>
+             </div>
           </div>
+
+          {inputType === 'youtube' ? (
+              <div className="input-field">
+                <label htmlFor="source-url">YouTube Video or Playlist URL</label>
+                <input 
+                  id="source-url"
+                  type="text" 
+                  className="text-input" 
+                  placeholder="https://youtube.com/watch?v=..."
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  required
+                />
+              </div>
+          ) : (
+             <>
+                <div className="input-field">
+                   <label>Transcript File (Required)</label>
+                   <button type="button" onClick={handleBrowseTranscript} className="secondary-button browse-button">
+                      <File size={18} /> {transcriptPath ? transcriptPath.split('\\').pop() : "Select Transcript File"}
+                   </button>
+                </div>
+                <div className="input-field">
+                   <label>Chapter Outline File (Required)</label>
+                   <button type="button" onClick={handleBrowseOutline} className="secondary-button browse-button">
+                      <File size={18} /> {outlinePath ? outlinePath.split('\\').pop() : "Select Outline File"}
+                   </button>
+                </div>
+             </>
+          )}
           
           <div className="input-field">
             <label htmlFor="topic">Topic / Title (Optional)</label>
@@ -182,29 +263,6 @@ const NewPipeline = () => {
             />
           </div>
 
-          <div className="input-field">
-            <label htmlFor="output-dir">Output Directory (Optional)</label>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input 
-                id="output-dir"
-                type="text" 
-                className="text-input" 
-                placeholder="Leave blank for default"
-                value={outputDir}
-                onChange={(e) => setOutputDir(e.target.value)}
-                style={{ flex: 1 }}
-              />
-              <button 
-                type="button" 
-                onClick={handleBrowse} 
-                className="secondary-button"
-                style={{ padding: '0 15px', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'var(--panel)', border: '1px solid var(--hairline)', borderRadius: '4px', color: 'var(--text-primary)', cursor: 'pointer' }}
-              >
-                <Folder size={18} /> Browse
-              </button>
-            </div>
-            <small className="field-hint">Defaults to ~/StudySuite/Output</small>
-          </div>
         </div>
           </form>
         </div>
@@ -222,7 +280,7 @@ const NewPipeline = () => {
                         e.target.nextSibling.style.display='flex'; 
                       }} 
                     />
-                    <div className="play-placeholder" style={{display: 'none', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: 'var(--text-muted)'}}>
+                    <div className="play-placeholder">
                       <Play size={24} />
                     </div>
                     <div className="duration-badge mono-text">0:00</div>
@@ -246,18 +304,25 @@ const NewPipeline = () => {
               )}
             </div>
           </div>
+          
+          {pipelineStatus === 'running' && (
+             <div className="status-panel panel-card">
+                <h3 className="serif-heading">Job Status: {pipelineStatus}</h3>
+                <p>Progress: {pipelineProgress?.current || 0} / {pipelineProgress?.total || 100}</p>
+             </div>
+          )}
 
           <div className="pipeline-button-row">
             {error && (
-               <div className={`status-alert ${error.includes("retry") ? "warning" : "error"}`} style={{marginBottom: '10px'}}>
+               <div className={`status-alert ${error.includes("retry") ? "warning" : "error"}`}>
                   {error}
                   {error.includes("Connect YouTube") && (
-                     <button type="button" onClick={() => setCurrentScreen('settings')} style={{marginLeft: '10px', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer'}}>
+                     <button type="button" onClick={() => setCurrentScreen('settings')} className="alert-link">
                         Go to Settings
                      </button>
                   )}
                   {error.includes("retry") && (
-                     <button type="button" onClick={handleSubmit} style={{marginLeft: '10px', textDecoration: 'underline', background: 'none', border: 'none', color: 'inherit', cursor: 'pointer'}}>
+                     <button type="button" onClick={handleSubmit} className="alert-link">
                         Retry
                      </button>
                   )}

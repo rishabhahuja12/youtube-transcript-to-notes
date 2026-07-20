@@ -378,6 +378,21 @@ def browse_directory() -> Dict[str, str]:
     
     return {"path": directory}
 
+@app.get("/content/browse-file")
+def browse_file() -> Dict[str, str]:
+    """Open a native file dialog to pick a file."""
+    import tkinter as tk
+    from tkinter import filedialog
+    
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    
+    file_path = filedialog.askopenfilename(title="Select File")
+    root.destroy()
+    
+    return {"path": file_path}
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Course Endpoints
 # ═══════════════════════════════════════════════════════════════════════

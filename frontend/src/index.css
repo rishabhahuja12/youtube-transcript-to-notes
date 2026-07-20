@@ -1262,3 +1262,72 @@ p {
   margin-bottom: var(--space-xl);
   max-width: 400px;
 }
+
+/* Phase 7 added classes */
+.library-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.search-input-wrapper {
+  position: relative;
+}
+.search-icon {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  color: var(--text-muted);
+}
+.search-input {
+  padding-left: 32px !important;
+}
+.sort-select {
+  width: auto !important;
+  appearance: auto !important;
+}
+.course-card-wrapper {
+  position: relative;
+}
+.status-badge-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  text-transform: capitalize;
+}
+
+.input-group {
+  display: flex;
+  gap: 10px;
+}
+.browse-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+}
+.alert-link {
+  margin-left: 10px;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+.play-placeholder {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-muted);
+}
+.status-panel {
+  margin-bottom: 20px;
+  padding: 15px;
+}

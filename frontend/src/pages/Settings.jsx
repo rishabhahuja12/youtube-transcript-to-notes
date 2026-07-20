@@ -64,8 +64,29 @@ const Settings = () => {
     }
   };
 
+  
+  const handleProviderChange = (e) => {
+    const provider = e.target.value;
+    let endpoint_url = '';
+    if (provider === 'groq') endpoint_url = 'https://api.groq.com/openai/v1';
+    if (provider === 'gemini') endpoint_url = 'https://generativelanguage.googleapis.com/v1beta/openai/';
+    if (provider === 'ollama') endpoint_url = 'http://localhost:11434/v1';
+    setNewKey({...newKey, provider, endpoint_url});
+  };
+
   const handleAddKey = async (e) => {
     e.preventDefault();
+    if (newKey.endpoint_url) {
+       if ((newKey.provider === 'groq' || newKey.provider === 'gemini') && !newKey.endpoint_url.startsWith('https://')) {
+          setError('Endpoint for Groq/Gemini must start with https://');
+          return;
+       }
+       if (newKey.provider === 'ollama' && !newKey.endpoint_url.startsWith('http://localhost')) {
+          setError('Endpoint for Ollama must start with http://localhost');
+          return;
+       }
+    }
+
     try {
       const res = await addPoolKey(newKey);
       if (res && res.success) {
@@ -228,7 +249,7 @@ const Settings = () => {
               <select 
                 className="form-input"
                 value={newKey.provider}
-                onChange={e => setNewKey({...newKey, provider: e.target.value})}
+                onChange={handleProviderChange}
               >
                 <option value="groq">Groq</option>
                 <option value="gemini">Gemini</option>

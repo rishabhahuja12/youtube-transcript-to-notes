@@ -6,6 +6,7 @@ const AppContext = createContext();
 const initialState = {
   currentScreen: 'newPipeline',
   activeCourseDir: null,
+  activeJobId: null,
   pipelineStatus: 'idle',
   pipelineLogs: [],
   pipelineProgress: { current: 0, total: 100 },
@@ -16,6 +17,7 @@ function reducer(state, action) {
   switch (action.type) {
     case 'SET_SCREEN': return { ...state, currentScreen: action.payload };
     case 'SET_COURSE_DIR': return { ...state, activeCourseDir: action.payload };
+    case 'SET_ACTIVE_JOB_ID': return { ...state, activeJobId: action.payload };
     case 'SET_PIPELINE_STATUS': return { ...state, pipelineStatus: action.payload };
     case 'SET_PIPELINE_LOGS': return { ...state, pipelineLogs: typeof action.payload === 'function' ? action.payload(state.pipelineLogs) : action.payload };
     case 'SET_PIPELINE_PROGRESS': return { ...state, pipelineProgress: action.payload };
@@ -52,6 +54,7 @@ export const AppProvider = ({ children }) => {
     ...state,
     setCurrentScreen: (val) => dispatch({ type: 'SET_SCREEN', payload: val }),
     setActiveCourseDir: (val) => dispatch({ type: 'SET_COURSE_DIR', payload: val }),
+    setActiveJobId: (val) => dispatch({ type: 'SET_ACTIVE_JOB_ID', payload: val }),
     setPipelineStatus: (val) => dispatch({ type: 'SET_PIPELINE_STATUS', payload: val }),
     setPipelineLogs: (val) => dispatch({ type: 'SET_PIPELINE_LOGS', payload: val }),
     setPipelineProgress: (val) => dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: val }),
