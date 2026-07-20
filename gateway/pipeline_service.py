@@ -1,19 +1,17 @@
 import asyncio
-import json
 import logging
 import os
 import threading
-import uuid
 from typing import Optional, Callable, Any
-from dataclasses import dataclass, field
 
-from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.pipeline import run_pipeline, run_pipeline_from_data
 from src.provider_pool import ProviderPool
 from src.credentials import get_provider_pool_or_legacy
+from gateway.pipeline_jobs import job_manager, PipelineJob
 
 app = FastAPI(title="Pipeline Service", description="Handles pipeline execution", version="1.0.0")
 
@@ -45,6 +43,10 @@ class PipelineStartRequest(BaseModel):
     is_url_pipeline: bool = False
     transcript_blocks: Optional[list] = []
     chapters: Optional[list] = []
+    
+    model_config = {
+        "extra": "forbid"
+    }
 
 class PipelineResponse(BaseModel):
     """Response schema for pipeline start and cancel endpoints."""
@@ -53,47 +55,33 @@ class PipelineResponse(BaseModel):
     error: Optional[str] = None
     job_id: Optional[str] = None
 
-@dataclass
-class PipelineJob:
-    job_id: str
-    status: str
-    cancel_event: threading.Event = field(default_factory=threading.Event)
-    worker_thread: Optional[threading.Thread] = None
-    result: Optional[dict] = None
-    websockets: list[WebSocket] = field(default_factory=list)
-
-# Global state
-job_lock = threading.Lock()
-active_job: Optional[PipelineJob] = None
-
 async def broadcast_message(job: PipelineJob, message: dict) -> None:
-    """Broadcast a JSON message to all connected WebSocket clients for a job.
-    
-    Args:
-        job: The active PipelineJob
-        message: The message dictionary to send.
-    """
+    """Broadcast a JSON message to all connected WebSocket clients for a job."""
     message["job_id"] = job.job_id
+    job_manager.record_event(job, message)
     disconnected = []
-    for ws in job.websockets:
+    
+    # Use a snapshot of subscribers to avoid set mutation errors
+    subscribers = set(job.subscribers)
+    for ws in subscribers:
         try:
             await ws.send_json(message)
         except Exception as e:
             logging.error(f"Error broadcasting to a websocket: {e}")
             disconnected.append(ws)
     for ws in disconnected:
-        if ws in job.websockets:
-            job.websockets.remove(ws)
+        if ws in job.subscribers:
+            job.subscribers.remove(ws)
 
 def get_on_log_callback(job: PipelineJob, loop: asyncio.AbstractEventLoop) -> Callable[[str], None]:
     def on_log(message: str) -> None:
-        msg = {"type": "log", "message": message}
+        msg = {"type": "log", "level": "info", "message": message}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     return on_log
 
 def get_on_progress_callback(job: PipelineJob, loop: asyncio.AbstractEventLoop) -> Callable[[int, int], None]:
     def on_progress(current: int, total: int, step: str = "Processing...") -> None:
-        msg = {"type": "progress", "current": current, "total": total, "step": step}
+        msg = {"type": "progress", "current": current, "total": total}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     return on_progress
     
@@ -104,7 +92,6 @@ def get_on_phase_callback(job: PipelineJob, loop: asyncio.AbstractEventLoop) -> 
     return on_phase
 
 def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: ProviderPool, loop: asyncio.AbstractEventLoop) -> None:
-    global active_job
     try:
         on_log = get_on_log_callback(job, loop)
         on_progress = get_on_progress_callback(job, loop)
@@ -116,9 +103,9 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
             yt_data = extract_from_url(request.youtube_url, on_log=on_log)
             if yt_data.get("status") in ("transcript_failed", "metadata_failed", "invalid_url"):
                 on_log(f"Extraction failed with status: {yt_data.get('status')}. Halting pipeline.")
-                msg = {"type": "error", "message": f"Extraction failed: {yt_data.get('status')}"}
+                msg = {"type": "terminal", "status": "failed", "result": {"error": f"Extraction failed: {yt_data.get('status')}"}}
+                job_manager.finalize_job(job, "failed", {"error": f"Extraction failed: {yt_data.get('status')}"})
                 asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
-                job.status = "failed"
                 return
 
             transcript_blocks = yt_data['transcript_blocks']
@@ -172,46 +159,41 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
                 on_phase=on_phase
             )
         
-        job.result = result
-        job.status = result.get("status", "completed" if result.get("success") else "failed")
+        status = result.get("status", "complete" if result.get("success") else "failed")
         course_path = result.get("course_dir") or (os.path.dirname(result.get("detailed_path", "")) if result.get("detailed_path") else "")
         success = result.get("success", False)
         course_record = None
         if success and course_path and os.path.isdir(course_path):
             from gateway.content_service import _add_library_entry
             course_record = _add_library_entry(course_path)
-        msg = {"type": "complete", "success": success, "status": job.status, "course_dir": course_path, "course_record": course_record, "result": result}
+            result["course_record"] = course_record
+        
+        job_manager.finalize_job(job, status, result)
+        msg = {"type": "terminal", "status": status, "result": result}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     except Exception as e:
         logging.error(f"Pipeline worker failed: {e}")
-        job.status = "failed"
-        msg = {"type": "error", "message": str(e)}
+        error_result = {"error": str(e)}
+        job_manager.finalize_job(job, "failed", error_result)
+        msg = {"type": "terminal", "status": "failed", "result": error_result}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
-    finally:
-        with job_lock:
-            # We don't clear active_job so /stream clients can still read it if they connect right after.
-            # They will see it is finished and maybe disconnect or just receive the final status.
-            pass
+
 
 @router.post("/start", response_model=PipelineResponse)
 async def start_pipeline(request: PipelineStartRequest) -> PipelineResponse:
-    global active_job
-    
-    with job_lock:
-        if active_job and active_job.status == "running":
-            return PipelineResponse(success=False, message="Already running", error="Pipeline already running", job_id=active_job.job_id)
-            
-        try:
-            pool = get_provider_pool_or_legacy()
-        except Exception as e:
-            return PipelineResponse(success=False, message="Keys error", error=f"Failed to load API keys: {e}")
-            
-        job_id = uuid.uuid4().hex
-        new_job = PipelineJob(job_id=job_id, status="running")
-        active_job = new_job
+    try:
+        new_job = job_manager.create_job()
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+        
+    try:
+        pool = get_provider_pool_or_legacy()
+    except Exception as e:
+        # if fails, clean up job? It will just stay running until timeout, but let's finalize it
+        job_manager.finalize_job(new_job, "failed", {"error": f"Failed to load API keys: {e}"})
+        return PipelineResponse(success=False, message="Keys error", error=f"Failed to load API keys: {e}")
 
     loop = asyncio.get_running_loop()
-    
     worker_thread = threading.Thread(
         target=pipeline_worker,
         args=(new_job, request, pool, loop),
@@ -220,38 +202,61 @@ async def start_pipeline(request: PipelineStartRequest) -> PipelineResponse:
     new_job.worker_thread = worker_thread
     worker_thread.start()
     
-    return PipelineResponse(success=True, message="Pipeline started in background", job_id=job_id)
+    return PipelineResponse(success=True, message="Pipeline started in background", job_id=new_job.job_id)
 
-@router.post("/cancel", response_model=PipelineResponse)
-async def cancel_pipeline() -> PipelineResponse:
-    with job_lock:
-        if not active_job or active_job.status != "running":
-            return PipelineResponse(success=False, message="No active job running")
-        active_job.cancel_event.set()
-        return PipelineResponse(success=True, message="Cancel requested", job_id=active_job.job_id)
+@router.post("/{job_id}/cancel", response_model=PipelineResponse)
+async def cancel_pipeline(job_id: str) -> PipelineResponse:
+    job = job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    if job.status != "running":
+        raise HTTPException(status_code=409, detail="Job is already in a terminal state")
+        
+    job.cancel_event.set()
+    return PipelineResponse(success=True, message="Cancel requested", job_id=job.job_id)
 
-@router.websocket("/stream")
-async def websocket_endpoint(websocket: WebSocket) -> None:
+@router.websocket("/stream/{job_id}")
+async def websocket_endpoint(websocket: WebSocket, job_id: str) -> None:
+    job = job_manager.get_job(job_id)
+    if not job:
+        await websocket.close(code=4004, reason="Job not found")
+        return
+
     await websocket.accept()
     
-    with job_lock:
-        current_job = active_job
-        if current_job:
-            current_job.websockets.append(websocket)
-            
-    if not current_job:
-        await websocket.close(reason="No active job")
+    # Send snapshot
+    await websocket.send_json({
+        "type": "snapshot",
+        "job_id": job.job_id,
+        "status": job.status,
+        "result": job.result
+    })
+    
+    # Replay events
+    for event in list(job.event_journal):
+        await websocket.send_json(event)
+        
+    job.subscribers.add(websocket)
+    
+    # If job is already terminal, close after replay — no need to keep the socket open
+    if job.status in ("complete", "degraded", "failed", "cancelled"):
+        job.subscribers.discard(websocket)
+        await websocket.close()
         return
         
     try:
         while True:
-            _ = await websocket.receive_text()
-    except WebSocketDisconnect:
-        if current_job and websocket in current_job.websockets:
-            current_job.websockets.remove(websocket)
-    except Exception as e:
-        logging.error(f"Error in pipeline stream websocket: {e}")
-        if current_job and websocket in current_job.websockets:
-            current_job.websockets.remove(websocket)
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+    except Exception:
+        pass
+    finally:
+        job.subscribers.discard(websocket)
+
+
+
+
 
 app.include_router(router)

@@ -77,6 +77,10 @@ def run_pipeline(
     practical_path = ""
 
     try:
+        if cancel_event.is_set():
+            if on_phase: on_phase("transcript", "cancelled")
+            return {"success": False, "status": "cancelled", "course_dir": "", "detailed_path": "", "practical_path": "", "error": "Cancelled by user"}
+            
         if on_phase: on_phase("transcript", "running")
         active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
         if active_pool.total == 0:
@@ -153,7 +157,7 @@ def run_pipeline(
                 on_log(f"WARNING: Frame extraction failed: {e}. Continuing without visuals.")
                 chapter_frames = None
 
-        if on_phase: on_phase("transcript", "completed")
+        if on_phase: on_phase("transcript", "complete")
         return _run_llm_pipeline(
             chapters, chapter_texts, course_dir, pool, active_pool, cancel_event, on_log, on_progress,
             video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag, on_phase=on_phase
@@ -189,6 +193,10 @@ def run_pipeline_from_data(
         List of dicts ``{"time": "H:MM:SS", "title": str, "section": str}``.
     """
     try:
+        if cancel_event.is_set():
+            if on_phase: on_phase("transcript", "cancelled")
+            return {"success": False, "status": "cancelled", "course_dir": "", "detailed_path": "", "practical_path": "", "error": "Cancelled by user"}
+            
         active_pool = pool.get_vision_pool() if enable_multimodal else pool.get_text_pool()
         if active_pool.total == 0:
             if enable_multimodal:
@@ -240,7 +248,7 @@ def run_pipeline_from_data(
                 on_log(f"WARNING: Frame extraction failed: {e}. Continuing without visuals.")
                 chapter_frames = None
 
-        if on_phase: on_phase("transcript", "completed")
+        if on_phase: on_phase("transcript", "complete")
         return _run_llm_pipeline(
             chapters, chapter_texts, course_dir, pool, active_pool, cancel_event, on_log, on_progress,
             video_title=video_title, chapter_frames=chapter_frames, enable_kag=enable_kag, on_phase=on_phase
@@ -271,7 +279,7 @@ def _run_llm_pipeline(
     practical_path = ""
     os.makedirs(course_dir, exist_ok=True)
     checkpoint_path = os.path.join(course_dir, ".checkpoint.json")
-    final_status = "completed"
+    final_status = "complete"
 
     try:
         # --- Pre-flight estimation ---
@@ -536,7 +544,7 @@ def _run_llm_pipeline(
                     "error": "Cancelled by user"
                 }
 
-        if on_phase: on_phase("notes", "completed")
+        if on_phase: on_phase("notes", "complete")
 
         # ------------------------------------------------------------------
         # Assemble Course_Detailed_Notes.md
@@ -772,7 +780,7 @@ def _run_llm_pipeline(
             final_status = "degraded"
 
         if not is_summary_degraded:
-            if on_phase: on_phase("practical", "completed")
+            if on_phase: on_phase("practical", "complete")
         else:
             if on_phase: on_phase("practical", "degraded")
 
@@ -785,6 +793,19 @@ def _run_llm_pipeline(
         # Step 5: Generate Knowledge Graph
         # ------------------------------------------------------------------
         if enable_kag:
+            if cancel_event.is_set():
+                if on_phase: on_phase("kag", "cancelled")
+                on_log("Pipeline cancelled by user.")
+                return {
+                    "success": False,
+                    "status": "cancelled",
+                    "course_dir": course_dir,
+                    "detailed_path": detailed_path,
+                    "practical_path": practical_path,
+                    "kag_html_path": "",
+                    "error": "Cancelled by user"
+                }
+                
             if on_phase: on_phase("kag", "running")
             on_log("Step 5: Generating Knowledge Graph...")
             try:
@@ -805,7 +826,7 @@ def _run_llm_pipeline(
                 with open(kag_html_path, "w", encoding="utf-8") as f:
                     f.write(html_content)
                 on_log(f"Knowledge Graph saved to: {kag_html_path}")
-                if on_phase: on_phase("kag", "completed")
+                if on_phase: on_phase("kag", "complete")
             except Exception as e:
                 on_log(f"WARNING: Knowledge Graph generation failed: {e}. Skipping.")
                 if on_phase: on_phase("kag", "degraded")
