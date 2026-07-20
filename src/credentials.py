@@ -82,14 +82,27 @@ def delete_credential(key: str) -> bool:
         return False
 
 
+POOL_FILE_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "provider_pool.json")
+
 def store_provider_pool(pool_json: str) -> bool:
-    """Store the serialized pool JSON in keyring."""
-    return store_credential(KEY_PROVIDER_POOL, pool_json)
+    """Store the serialized pool JSON in a local file."""
+    try:
+        with open(POOL_FILE_PATH, "w", encoding="utf-8") as f:
+            f.write(pool_json)
+        return True
+    except OSError:
+        return False
 
 
 def get_provider_pool() -> str:
-    """Retrieve the pool JSON from keyring."""
-    return get_credential(KEY_PROVIDER_POOL)
+    """Retrieve the pool JSON from the local file."""
+    if not os.path.exists(POOL_FILE_PATH):
+        return ""
+    try:
+        with open(POOL_FILE_PATH, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
 
 
 def get_provider_pool_or_legacy() -> "ProviderPool":
@@ -99,9 +112,14 @@ def get_provider_pool_or_legacy() -> "ProviderPool":
 
     pool_json = get_provider_pool()
     if pool_json:
-        return ProviderPool.from_json(pool_json)
+        try:
+            return ProviderPool.from_json(pool_json)
+        except ValueError as e:
+            import logging
+            logging.error(f"Corrupted provider pool found in keyring, ignoring: {e}")
+            # Fall through to legacy migration
 
-    # Attempt legacy migration if no pool exists
+    # Attempt legacy migration if no pool exists or if it was corrupted
     legacy_key = get_credential(KEY_API_KEY)
     if legacy_key:
         provider = get_credential(KEY_PROVIDER) or "groq"

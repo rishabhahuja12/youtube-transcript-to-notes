@@ -10,6 +10,18 @@ config.json
 pipeline.log
 graphify-out/
 client_secret.json
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+config.json
+.env
+.checkpoint.json
+pipeline.log
+graphify-out/
+client_secret.json
 config.json.lock
 .pytest_cache/
 test_output/
@@ -19,3 +31,4 @@ app_legacy.py
 extract_plan.py
 merge_plan.py
 implementation_*.md
+provider_pool.json

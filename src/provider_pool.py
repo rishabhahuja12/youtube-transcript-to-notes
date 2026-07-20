@@ -137,14 +137,16 @@ class ProviderPool:
                 # Normalize before instantiation
                 item["provider"] = item.get("provider", "").lower()
                 
-                config = ProviderConfig(**item)
-                config.validate()
-                configs.append(config)
+                try:
+                    config = ProviderConfig(**item)
+                    config.validate()
+                    configs.append(config)
+                except Exception as e:
+                    import logging
+                    logging.warning(f"Skipping invalid provider config in pool: {e}")
             return ProviderPool(configs)
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse provider pool JSON: {e}")
-        except Exception as e:
-            raise ValueError(f"Configuration error in provider pool: {str(e)}")
         
     def to_json(self) -> str:
         """Serialize the pool to a JSON string for storage."""
