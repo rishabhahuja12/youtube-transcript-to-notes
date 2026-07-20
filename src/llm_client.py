@@ -5,6 +5,7 @@ Includes an adaptive rate limiter that proactively paces requests to stay
 within provider-specific RPM/TPM limits.
 """
 import json
+import logging
 import time
 import threading
 from collections import deque
@@ -317,16 +318,16 @@ def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_pr
             else:
                 return str(res_data)
     except urllib.error.HTTPError as e:
-        err_msg = e.read().decode("utf-8", errors="ignore")
+        logging.error("LLM error", extra={"provider": provider, "status_class": f"{e.code // 100}xx", "code": e.code})
         if e.code == 429:
-            raise RateLimitError(f"HTTP {e.code} Rate Limit: {e.reason}\nResponse: {err_msg}") from e
+            raise RateLimitError(f"HTTP {e.code} Rate Limit: {e.reason}") from e
         elif e.code in (401, 403):
-            raise AuthenticationError(f"HTTP {e.code} Auth Error: {e.reason}\nResponse: {err_msg}") from e
+            raise AuthenticationError(f"HTTP {e.code} Auth Error: {e.reason}") from e
         elif e.code == 400:
-            raise InvalidRequestError(f"HTTP {e.code} Invalid Request: {e.reason}\nResponse: {err_msg}") from e
+            raise InvalidRequestError(f"HTTP {e.code} Invalid Request: {e.reason}") from e
         elif e.code in (502, 503, 504):
-            raise ProviderUnavailableError(f"HTTP {e.code} Unavailable: {e.reason}\nResponse: {err_msg}") from e
-        raise LLMError(f"HTTP {e.code} Error: {e.reason}\nResponse: {err_msg}") from e
+            raise ProviderUnavailableError(f"HTTP {e.code} Unavailable: {e.reason}") from e
+        raise LLMError(f"HTTP {e.code} Error: {e.reason}") from e
     except TimeoutError as e:
         raise ProviderUnavailableError(f"Timeout: {str(e)}") from e
     except urllib.error.URLError as e:
@@ -358,19 +359,16 @@ def call_ollama_chat(model: str, messages: list) -> str:
             res_data = json.loads(response.read().decode("utf-8"))
             return res_data.get("message", {}).get("content", "")
     except urllib.error.HTTPError as e:
-        try:
-            error_body = e.read().decode("utf-8")
-        except Exception:
-            error_body = str(e)
+        logging.error("LLM error", extra={"provider": "ollama", "status_class": f"{e.code // 100}xx", "code": e.code})
         if e.code == 429:
-            raise RateLimitError(f"Ollama returned {e.code}: {error_body}") from e
+            raise RateLimitError(f"Ollama returned {e.code}: {e.reason}") from e
         elif e.code in (401, 403):
-            raise AuthenticationError(f"Ollama returned {e.code}: {error_body}") from e
+            raise AuthenticationError(f"Ollama returned {e.code}: {e.reason}") from e
         elif e.code == 400:
-            raise InvalidRequestError(f"Ollama returned {e.code}: {error_body}") from e
+            raise InvalidRequestError(f"Ollama returned {e.code}: {e.reason}") from e
         elif e.code in (502, 503, 504):
-            raise ProviderUnavailableError(f"Ollama returned {e.code}: {error_body}") from e
-        raise LLMError(f"Ollama returned {e.code}: {error_body}") from e
+            raise ProviderUnavailableError(f"Ollama returned {e.code}: {e.reason}") from e
+        raise LLMError(f"Ollama returned {e.code}: {e.reason}") from e
     except TimeoutError as e:
         raise ProviderUnavailableError(f"Timeout: {str(e)}") from e
     except urllib.error.URLError as e:

@@ -109,6 +109,13 @@ class HealthStatus(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════
 
 
+
+def resolve_within_root(root: Path, user_path: str) -> Path:
+    candidate = (root / str(user_path)).resolve()
+    if not candidate.is_relative_to(root.resolve()):
+        raise HTTPException(status_code=403, detail="Invalid path.")
+    return candidate
+
 def _load_library_entries() -> List[Dict[str, Any]]:
     """Load the list of library entries."""
     if os.path.exists(CONFIG_PATH):
@@ -437,11 +444,8 @@ async def get_course_notes(id: str, file: str) -> Dict[str, str]:
     course_dir = _resolve_course_dir(id)
     course_root = Path(course_dir).resolve()
     try:
-        requested_path = (course_root / file).resolve()
+        requested_path = resolve_within_root(course_root, file)
     except Exception:
-        raise HTTPException(status_code=403, detail="Invalid filename.")
-        
-    if not str(requested_path).startswith(str(course_root)):
         logging.error(f"Path traversal blocked: {file}")
         raise HTTPException(status_code=403, detail="Invalid filename.")
         
@@ -473,17 +477,20 @@ async def get_course_graph(id: str) -> Dict[str, str]:
         Dict[str, str]: The HTML content of the knowledge graph.
     """
     course_dir = _resolve_course_dir(id)
+    course_root = Path(course_dir).resolve()
     graph_file = None
     try:
         for name in os.listdir(course_dir):
             if "_knowledge_graph" in name.lower() and name.endswith(".html"):
-                graph_file = os.path.join(course_dir, name)
-                break
-    except OSError as exc:
+                candidate = resolve_within_root(course_root, name)
+                if candidate.is_file():
+                    graph_file = str(candidate)
+                    break
+    except Exception as exc:
         logging.error(f"Error reading directory {course_dir} for graph: {exc}")
         pass
 
-    if not graph_file or not os.path.isfile(graph_file):
+    if not graph_file:
         return {"html": ""}
 
     try:
@@ -532,11 +539,8 @@ async def serve_static_file(id: str, filename: str) -> FileResponse:
     course_dir = _resolve_course_dir(id)
     course_root = Path(course_dir).resolve()
     try:
-        requested_path = (course_root / filename).resolve()
+        requested_path = resolve_within_root(course_root, filename)
     except Exception:
-        raise HTTPException(status_code=403, detail="Invalid filename.")
-        
-    if not str(requested_path).startswith(str(course_root)):
         logging.error(f"Path traversal blocked: {filename}")
         raise HTTPException(status_code=403, detail="Invalid filename.")
         
@@ -606,6 +610,8 @@ async def add_settings_pool_key(req: dict) -> Dict[str, bool]:
         pool.configs.append(cfg)
         success = store_provider_pool(pool.to_json())
         return {"success": success}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         logging.error(f"Error adding to pool: {exc}")
         raise HTTPException(status_code=500, detail=f"Error adding to pool: {exc}") from exc
@@ -651,9 +657,12 @@ async def get_settings_health() -> HealthStatus:
 
 @app.get("/settings/youtube/status")
 async def get_youtube_status():
-    from src.auth import load_credentials
-    creds = load_credentials()
-    return {"connected": creds is not None and not (creds.expired and not creds.refresh_token)}
+    try:
+        from src.auth import load_credentials
+        creds = load_credentials()
+        return {"connected": creds is not None}
+    except Exception:
+        return {"connected": False}
 
 @app.post("/settings/youtube/connect")
 def connect_youtube_endpoint():
@@ -666,9 +675,14 @@ def connect_youtube_endpoint():
 
 @app.post("/settings/youtube/disconnect")
 async def disconnect_youtube_endpoint():
-    path = os.path.expanduser('~/.studysuite/yt_token.pickle')
-    if os.path.exists(path):
-        os.remove(path)
+    from src.auth import TOKEN_JSON_PATH, LEGACY_TOKEN_PICKLE_PATH
+    import os
+    if os.path.exists(TOKEN_JSON_PATH):
+        try: os.remove(TOKEN_JSON_PATH)
+        except OSError: pass
+    if os.path.exists(LEGACY_TOKEN_PICKLE_PATH):
+        try: os.remove(LEGACY_TOKEN_PICKLE_PATH)
+        except OSError: pass
     return {"connected": False}
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -740,11 +754,8 @@ async def pdf_export(req: PdfExportRequest) -> Dict[str, str]:
     course_dir = _resolve_course_dir(req.course_id)
     course_root = Path(course_dir).resolve()
     try:
-        requested_path = (course_root / req.filename).resolve()
+        requested_path = resolve_within_root(course_root, req.filename)
     except Exception:
-        raise HTTPException(status_code=403, detail="Invalid filename.")
-        
-    if not str(requested_path).startswith(str(course_root)):
         logging.error(f"Path traversal blocked for PDF: {req.filename}")
         raise HTTPException(status_code=403, detail="Invalid filename.")
         

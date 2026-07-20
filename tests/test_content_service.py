@@ -289,6 +289,33 @@ async def test_settings_pool_post() -> None:
 
 
 @pytest.mark.asyncio
+async def test_settings_pool_post_invalid() -> None:
+    """POST /settings/pool should return 422 on validation failure."""
+    with patch("src.credentials.get_provider_pool_or_legacy") as mock_get, patch("src.provider_pool.ProviderConfig") as mock_cfg_class:
+        from src.provider_pool import ProviderPool
+        mock_get.return_value = ProviderPool([])
+
+        # Simulate ProviderConfig raising ValueError
+        mock_cfg_class.side_effect = ValueError("Invalid capability")
+
+        async with _client() as client:
+            resp = await client.post(
+                "/settings/pool",
+                json={
+                    "provider": "groq",
+                    "endpoint_url": "https://api.groq.com",
+                    "api_key": "sk-test",
+                    "model_name": "llama3",
+                    "capability": "invalid_cap"
+                }
+            )
+
+    assert resp.status_code == 422
+    assert "Invalid capability" in resp.json()["detail"]
+
+
+
+@pytest.mark.asyncio
 async def test_cors_allowed_origin() -> None:
     """CORS should allow localhost:8000 origin."""
     async with _client() as client:

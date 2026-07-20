@@ -1,10 +1,17 @@
 import os
 import json
+import pickle
+import tempfile
 from google.oauth2.credentials import Credentials
 from typing import Any, Dict, Optional
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+
+
+STUDYSUITE_DIR = os.path.join(os.path.expanduser("~"), ".studysuite")
+TOKEN_JSON_PATH = os.path.join(STUDYSUITE_DIR, "token.json")
+LEGACY_TOKEN_PICKLE_PATH = os.path.join(STUDYSUITE_DIR, "token.pickle")
 
 SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
 
@@ -18,9 +25,11 @@ def connect_youtube() -> Any:
     flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
     creds = flow.run_local_server(port=0)
     
-    os.makedirs(os.path.expanduser('~/.studysuite'), exist_ok=True)
-    with open(os.path.expanduser('~/.studysuite/yt_token.json'), 'w') as f:
+    os.makedirs(STUDYSUITE_DIR, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
         f.write(creds.to_json())
+    os.replace(temp_path, TOKEN_JSON_PATH)
     return creds
 
 def load_credentials() -> Optional[Any]:
@@ -29,18 +38,41 @@ def load_credentials() -> Optional[Any]:
     Returns:
         Optional[Any]: Google OAuth credentials object if found and valid, None otherwise.
     """
-    path = os.path.expanduser('~/.studysuite/yt_token.json')
-    if not os.path.exists(path):
+    creds = None
+    
+    if os.path.exists(TOKEN_JSON_PATH):
+        try:
+            creds = Credentials.from_authorized_user_file(TOKEN_JSON_PATH, SCOPES)
+        except Exception:
+            return None
+    elif os.path.exists(LEGACY_TOKEN_PICKLE_PATH):
+        try:
+            with open(LEGACY_TOKEN_PICKLE_PATH, 'rb') as f:
+                creds = pickle.load(f)
+            if creds:
+                os.makedirs(STUDYSUITE_DIR, exist_ok=True)
+                fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+                with os.fdopen(fd, 'w', encoding='utf-8') as f_out:
+                    f_out.write(creds.to_json())
+                os.replace(temp_path, TOKEN_JSON_PATH)
+                os.remove(LEGACY_TOKEN_PICKLE_PATH)
+        except Exception:
+            return None
+            
+    if not creds:
         return None
-    try:
-        creds = Credentials.from_authorized_user_file(path, SCOPES)
-        if creds and creds.expired and creds.refresh_token:
+        
+    if creds.expired and creds.refresh_token:
+        try:
             creds.refresh(Request())
-            with open(path, 'w') as f:
+            fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 f.write(creds.to_json())
-        return creds
-    except Exception as e:
-        raise ValueError("metadata_failed: Connect YouTube")
+            os.replace(temp_path, TOKEN_JSON_PATH)
+        except Exception:
+            return None
+            
+    return creds
 
 
 def get_video_metadata(video_id: str, creds: Any) -> Dict[str, Any]:
