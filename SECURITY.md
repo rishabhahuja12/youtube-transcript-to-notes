@@ -21,6 +21,7 @@ Open an issue.
 | Google OAuth token (YouTube readonly) | `~/.studysuite/yt_token.pickle` | No (relies on OS filesystem permissions) | Only to `googleapis.com`, directly by the user's OAuth session |
 | Video transcripts / notes | `~/StudySuite/Output/` | No | No |
 | App settings | `~/.studysuite/config.json` | No | No |
+| Provider API Keys | OS Keyring | Yes (via OS Credential Manager) | Only to the configured LLM provider endpoint |
 
 ### What is never stored or touched
 
@@ -34,6 +35,34 @@ Open an issue.
   explicitly clicks "Allow."
 - **User activity logs** — there is no telemetry, no analytics, and no relay
   server. No record of which videos a user processes leaves their machine.
+- **Plaintext API Keys** — the app never stores API keys in plaintext files. They are stored securely in the OS keyring.
+
+---
+
+## Third-Party Data Transmission (LLMs)
+
+When generating notes, the following data is transmitted to your configured LLM provider (Groq, Gemini, OpenRouter, or self-hosted Ollama):
+- The extracted transcript text.
+- Image frames (if multimodal processing is enabled).
+
+No other data (such as user metadata or unrelated system information) is transmitted. The data goes *only* to the endpoint you have configured.
+
+---
+
+## Local Rendering & Security
+
+- **PDF Generation**: The PDF renderer runs entirely locally and offline. It does not use external CDNs and enforces a strict Content Security Policy (CSP).
+- **Knowledge Graph**: The generated Knowledge Graph HTML output uses escaped labels to prevent script injection attacks.
+
+---
+
+## Pipeline Status Definitions
+
+The application defines precise semantics for pipeline execution statuses:
+- **`complete`**: All required outputs were generated successfully.
+- **`degraded`**: Required notes were generated, but optional features (e.g., KAG, practical summary) partially failed.
+- **`failed`**: Required note generation failed entirely.
+- **`cancelled`**: The user cancelled the operation before completion — this is never reported as a success.
 
 ---
 
@@ -78,6 +107,7 @@ credential in this path that could leak, expire insecurely, or be misused.
 | `bgutil-ytdlp-pot-provider` | Generates PO Tokens locally via a subprocess | Runs local code with system privileges; version-pinned, built from source at install time, not pulled as a prebuilt binary |
 | `google-auth-oauthlib` | OAuth flow | Official Google library |
 | `google-api-python-client` | YouTube Data API v3 calls | Official Google library |
+| `keyring` | OS Credential Manager wrapper | Official Python package, heavily audited |
 
 All dependency versions are pinned in `requirements.txt`. Automatic updates of
 security-relevant components (the PO Token provider in particular) are

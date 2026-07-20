@@ -74,7 +74,7 @@ and `SECURITY.md`, not a quiet PR.
 
 - `bgutil-ytdlp-pot-provider` (or any PO Token provider) must be:
   - Built from source at install time where feasible, not pulled as an
-    opaque prebuilt binary.
+  opaque prebuilt binary.
   - Pinned to an exact version/commit.
   - Documented in `SECURITY.md` with what it does and why it's trusted.
 - Do not add additional third-party extraction/bypass tools without the same
@@ -94,7 +94,18 @@ and `SECURITY.md`, not a quiet PR.
 
 ---
 
-## 6. Reviewing PRs Against These Rules
+## 6. Pipeline Status Semantics
+
+The pipeline's final status must strictly adhere to these definitions:
+
+- **`complete`**: All required outputs generated successfully.
+- **`degraded`**: Required notes generated but optional features (KAG, practical summary) partially failed.
+- **`failed`**: Required note generation failed entirely.
+- **`cancelled`**: User cancelled before completion — do NOT report as success.
+
+---
+
+## 7. Reviewing PRs Against These Rules
 
 Before approving any PR touching `pipeline/`, `auth/`, or `extraction/`, the
 reviewer should be able to answer "yes" to all of:
@@ -110,6 +121,6 @@ quick fix.
 
 ---
 
-## 7. Git Conventions
+## 8. Git Conventions
 
 - **Commit Messages**: Must sound human and descriptive. Do NOT use robotic prefixes or include phase numbers (like "Phase 1", "Phase 2"). Write them exactly as a developer would when explaining what broke and how it was fixed (e.g., "pin keyring dependency and remove stale test file so the suite collects cleanly").

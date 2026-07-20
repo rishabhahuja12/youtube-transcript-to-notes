@@ -17,6 +17,12 @@ A powerful, automated tool for generating highly detailed, structured study note
 - **Practical Cheat-Sheet**: Automatically synthesizes the detailed notes into a highly condensed single-page practical guide.
 - **PDF Conversion**: One-click Markdown-to-PDF utility built into the UI.
 
+## Overview
+1. **Input**: Provide a YouTube URL or manual transcript/timestamps.
+2. **Extraction**: Video transcript and metadata are fetched (requires Google OAuth for YouTube Data API; absolutely **no** cookies are used or scraped).
+3. **Generation**: The text is chunked and sent to your configured LLM provider to generate rich notes.
+4. **Output**: Markdown notes are saved, with optional generation of PDF documents or Knowledge Graphs.
+
 ## Installation
 
 ### Prerequisites
@@ -44,13 +50,18 @@ A powerful, automated tool for generating highly detailed, structured study note
 ## Usage
 
 1. **Launch the App:**
+   You can run the app via the provided launcher:
    ```bash
-   python app.py
+   python launcher.py
+   ```
+   Alternatively, you can run the backend directly:
+   ```bash
+   uvicorn gateway.gateway:app
    ```
 
 2. **First Run Setup:**
-   On your first launch, the app will prompt you with an "API Configuration Setup" dialog. 
-   - Select your provider (Groq, OpenRouter, Ollama, etc.)
+   On your first launch, the app will prompt you to set up your LLM provider on the Settings page. 
+   - Select your provider (Groq, Gemini, OpenRouter, Ollama, etc.)
    - Provide your API Key and Model Name.
    - Credentials are saved securely to Windows Credential Manager.
 
@@ -62,13 +73,14 @@ A powerful, automated tool for generating highly detailed, structured study note
    The app will generate two markdown files in your selected output directory:
    - `{slug}_Detailed_Notes.md` (Chapter-by-chapter comprehensive notes)
    - `{slug}_Practical_Notes.md` (Quick cheat-sheet)
+
 ## Architecture
 
 The v2.0 architecture was fully refactored for modularity, testability, and UI separation:
-- `app.py`: UI entry point (CustomTkinter). No logic.
+- `app.py` / `launcher.py`: UI entry points.
 - `src/youtube.py`: YouTube extraction via `youtube-transcript-api` and `yt-dlp`.
 - `src/pipeline.py`: Core orchestration, rate-limiting logic, and checkpointing.
-- `src/parser.py`: Transcript deduplication, outline parsing, and text alignment. Tested with Pytest (44 tests).
+- `src/parser.py`: Transcript deduplication, outline parsing, and text alignment.
 - `src/llm_client.py`: Raw API communication and token bucket rate limiter.
 - `src/credentials.py`: System keyring wrapper for secure storage.
 
@@ -76,10 +88,10 @@ The v2.0 architecture was fully refactored for modularity, testability, and UI s
 
 To run the unit test suite:
 ```bash
-pytest tests/ -v
+pytest -q
 ```
 
 ## Troubleshooting
 
-- **Rate Limits?** The app automatically paces itself based on your provider. If you switch from Groq to an unlimited Local Ollama model, go to `API Setup / Credentials` in the UI to update your provider and remove the pacing restrictions.
+- **Rate Limits?** The app automatically paces itself based on your provider. If you switch from Groq to an unlimited Local Ollama model, go to Settings in the UI to update your provider and remove the pacing restrictions.
 - **YouTube Extraction Fails?** Ensure you have the latest `yt-dlp` installed, as YouTube frequently updates their backend. (`pip install -U yt-dlp`)
