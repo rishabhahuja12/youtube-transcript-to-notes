@@ -2,6 +2,7 @@
 Knowledge Graph generation module.
 """
 import json
+import html
 from src.llm_client import call_llm
 from src.provider_pool import ProviderConfig
 
@@ -114,12 +115,12 @@ def render_html(graph_data: dict) -> str:
         if group != "Other":
             # Sanitize group name for subgraph id
             group_id = str(group).replace(' ', '_').replace('"', '').replace('(', '').replace(')', '')
-            # Subgraph name can be quoted if it has spaces, but safer to use id and label
-            mermaid_lines.append(f'    subgraph {group_id} ["{str(group).replace(chr(34), "")}"]')
+            group_label = html.escape(str(group).replace(chr(34), ""))
+            mermaid_lines.append(f'    subgraph {group_id} ["{group_label}"]')
             
         for node in group_nodes:
             node_id = str(node.get("id")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
-            node_label = str(node.get("label", node_id)).replace('"', '').replace("(", "").replace(")", "")
+            node_label = html.escape(str(node.get("label", node_id)).replace('"', '').replace("(", "").replace(")", ""))
             # Node definition
             if group != "Other":
                 mermaid_lines.append(f'        {node_id}["{node_label}"];')
@@ -127,10 +128,10 @@ def render_html(graph_data: dict) -> str:
                 mermaid_lines.append(f'    {node_id}["{node_label}"];')
                 
             # Interactivity (Click directive)
-            anchor = node.get("section_anchor", "#")
+            anchor = html.escape(str(node.get("section_anchor", "#")))
             if anchor and not anchor.startswith("#"):
                 anchor = "#" + anchor
-            definition = str(node.get("definition", "")).replace('"', "'")
+            definition = html.escape(str(node.get("definition", "")).replace('"', "'"))
             
             # Click syntax: click nodeId "link" "tooltip"
             if group != "Other":
@@ -151,7 +152,7 @@ def render_html(graph_data: dict) -> str:
     for link in edges:
         source = str(link.get("source")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
         target = str(link.get("target")).replace('"', '').replace("(", "").replace(")", "").replace(" ", "_")
-        label = str(link.get("label", "")).replace('"', '').replace("(", "").replace(")", "")
+        label = html.escape(str(link.get("label", "")).replace('"', '').replace("(", "").replace(")", ""))
         if label:
             mermaid_lines.append(f'    {source} -->|"{label}"| {target};')
         else:
@@ -159,27 +160,24 @@ def render_html(graph_data: dict) -> str:
             
     mermaid_content = "\n".join(mermaid_lines)
     
-    html = f"""<!DOCTYPE html>
+    html_output = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Knowledge Graph</title>
+    <title>Knowledge Graph Data</title>
     <style>
         body {{ margin: 0; padding: 20px; font-family: sans-serif; background-color: #ffffff; }}
         #graph-container {{ width: 100%; height: 100%; display: flex; justify-content: center; }}
+        pre.mermaid {{ background: #f4f4f4; padding: 15px; border-radius: 5px; }}
     </style>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({{ startOnLoad: true }});
-    </script>
 </head>
 <body>
-    <h2>Knowledge Graph</h2>
+    <h2>Knowledge Graph Data (Raw Mermaid)</h2>
     <div id="graph-container">
-        <div class="mermaid">
+        <pre class="mermaid">
 {mermaid_content}
-        </div>
+        </pre>
     </div>
 </body>
 </html>"""
-    return html
+    return html_output

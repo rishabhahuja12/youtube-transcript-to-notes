@@ -9,6 +9,7 @@ import sys
 import tempfile
 import urllib.request
 import uuid
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -690,32 +691,22 @@ def _convert_md_to_pdf(md_path: str, theme: str, pdf_path: str) -> None:
     with open(md_path, "r", encoding="utf-8", errors="replace") as f:
         md_content = f.read()
 
+    # Sanitize markdown: escape any raw script/iframe tags to prevent XSS before rendering
+    md_content = re.sub(r'<(/?(?:script|iframe|object|embed|applet|style)[^>]*)>', r'&lt;\1&gt;', md_content, flags=re.IGNORECASE)
+
     html_body = markdown.markdown(md_content, extensions=["fenced_code", "tables"])
     custom_css = _get_shared_pdf_css(theme)
-    mermaid_script = (
-        "<script>"
-        "document.querySelectorAll('code.language-mermaid').forEach((block) => {"
-        "const graphDef = block.textContent;"
-        "const parent = block.parentElement;"
-        "parent.outerHTML = '<div class=\"mermaid\">' + graphDef + '</div>';"
-        "});"
-        "</script>"
-    )
 
     html_content = (
         "<!DOCTYPE html>"
         "<html>"
         "<head>"
         "<meta charset=\"utf-8\">"
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: file:; script-src 'none'\">"
         f"<style>{custom_css}</style>"
-        "<script src=\"https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js\"></script>"
-        "<script>"
-        "mermaid.initialize({ startOnLoad: true });"
-        "</script>"
         "</head>"
         "<body>"
         f"{html_body}"
-        f"{mermaid_script}"
         "</body>"
         "</html>"
     )

@@ -79,13 +79,31 @@ const Utilities = () => {
         <div className="utility-body">
           <div>
             <label className="form-label">Absolute File Path (.md)</label>
-            <input 
-              type="text" 
-              className="form-input"
-              placeholder="C:\Users\Username\Documents\notes.md"
-              value={pdfPath}
-              onChange={(e) => setPdfPath(e.target.value)}
-            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input 
+                type="text" 
+                className="form-input"
+                placeholder="C:\Users\Username\Documents\notes.md"
+                value={pdfPath}
+                onChange={(e) => setPdfPath(e.target.value)}
+                readOnly
+                style={{ flex: 1 }}
+              />
+              <button 
+                className="secondary-button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`${API_BASE_URL}/api/content/browse-file`);
+                    const data = await res.json();
+                    if (data.path) setPdfPath(data.path);
+                  } catch (e) {
+                    console.error('Failed to browse file:', e);
+                  }
+                }}
+              >
+                Browse...
+              </button>
+            </div>
           </div>
           
           <div>
