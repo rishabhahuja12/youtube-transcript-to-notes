@@ -272,6 +272,7 @@ def _run_llm_pipeline(
     video_title: str = None,
     chapter_frames: dict = None,
     enable_kag: bool = False,
+    enable_pdf: bool = False,
     on_phase: callable = None,
 ):
     """Internal shared LLM pipeline: takes parsed chapters + texts, generates notes."""
@@ -338,6 +339,7 @@ def _run_llm_pipeline(
                     "detailed_path": "",
                     "practical_path": "",
                     "kag_html_path": "",
+                    "pdf_path": "",
                     "error": "Cancelled by user"
                 }
 
@@ -407,6 +409,7 @@ def _run_llm_pipeline(
                         "detailed_path": "",
                         "practical_path": "",
                         "kag_html_path": "",
+                        "pdf_path": "",
                         "error": "Cancelled by user"
                     }
 
@@ -447,7 +450,7 @@ def _run_llm_pipeline(
                     on_log(f"All API configs exhausted. Cooling down for {retry_delay:.1f}s...")
                     if cancel_event.wait(retry_delay):
                         if on_phase: on_phase("notes", "cancelled")
-                        return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": "", "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                        return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": "", "practical_path": "", "kag_html_path": "", "pdf_path": "", "error": "Cancelled by user" }
                     active_pool.reset_cycle()
                     limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                     retry_delay *= 2
@@ -457,7 +460,7 @@ def _run_llm_pipeline(
                         on_log(f"Network/timeout error: {e}. Retrying in {retry_delay}s...")
                         if cancel_event.wait(retry_delay):
                             if on_phase: on_phase("notes", "cancelled")
-                            return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": "", "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                            return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": "", "practical_path": "", "kag_html_path": "", "pdf_path": "", "error": "Cancelled by user" }
                         retry_delay *= 2
                     else:
                         on_log(f"WARNING: Network error after {max_retries} attempts: {e}")
@@ -541,9 +544,25 @@ def _run_llm_pipeline(
                     "detailed_path": "",
                     "practical_path": "",
                     "kag_html_path": "",
+                    "pdf_path": "",
                     "error": "Cancelled by user"
                 }
 
+        num_successful_chapters = sum(1 for s in detailed_notes_sections if "Could not generate notes using LLM" not in s)
+        if num_successful_chapters == 0:
+            if on_phase: on_phase("notes", "failed")
+            on_log("Failed to generate any detailed notes. Pipeline failed.")
+            return {
+                "success": False,
+                "status": "failed",
+                "course_dir": course_dir,
+                "detailed_path": "",
+                "practical_path": "",
+                "kag_html_path": "",
+                "pdf_path": "",
+                "error": "Failed to generate any required detailed notes."
+            }
+            
         if on_phase: on_phase("notes", "complete")
 
         # ------------------------------------------------------------------
@@ -673,6 +692,7 @@ def _run_llm_pipeline(
                     "detailed_path": detailed_path,
                     "practical_path": "",
                     "kag_html_path": "",
+                    "pdf_path": "",
                     "error": "Cancelled by user"
                 }
             
@@ -687,6 +707,7 @@ def _run_llm_pipeline(
                     "detailed_path": detailed_path,
                     "practical_path": "",
                     "kag_html_path": "",
+                    "pdf_path": "",
                     "error": "Cancelled by user"
                 }
 
@@ -721,7 +742,7 @@ def _run_llm_pipeline(
                 on_log(f"All API configs exhausted. Cooling down for {retry_delay:.1f}s...")
                 if cancel_event.wait(retry_delay):
                     if on_phase: on_phase("practical", "cancelled")
-                    return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": detailed_path, "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                    return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": detailed_path, "practical_path": "", "kag_html_path": "", "pdf_path": "", "error": "Cancelled by user" }
                 active_pool.reset_cycle()
                 limiter = AdaptiveRateLimiter.for_provider(active_pool.current.provider)
                 retry_delay *= 2
@@ -731,7 +752,7 @@ def _run_llm_pipeline(
                     on_log(f"Network/timeout error: {e}. Retrying in {retry_delay}s...")
                     if cancel_event.wait(retry_delay):
                         if on_phase: on_phase("practical", "cancelled")
-                        return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": detailed_path, "practical_path": "", "kag_html_path": "", "error": "Cancelled by user" }
+                        return { "success": False, "status": "cancelled", "course_dir": course_dir, "detailed_path": detailed_path, "practical_path": "", "kag_html_path": "", "pdf_path": "", "error": "Cancelled by user" }
                     retry_delay *= 2
                 else:
                     on_log(f"ERROR: Failed to generate practical summary after {max_retries} attempts: {e}")
@@ -791,7 +812,7 @@ def _run_llm_pipeline(
 
         # ------------------------------------------------------------------
         # Step 5: Generate Knowledge Graph
-        # ------------------------------------------------------------------
+        kag_html_path = ""
         if enable_kag:
             if cancel_event.is_set():
                 if on_phase: on_phase("kag", "cancelled")
@@ -803,6 +824,7 @@ def _run_llm_pipeline(
                     "detailed_path": detailed_path,
                     "practical_path": practical_path,
                     "kag_html_path": "",
+                    "pdf_path": "",
                     "error": "Cancelled by user"
                 }
                 
@@ -832,6 +854,39 @@ def _run_llm_pipeline(
                 if on_phase: on_phase("kag", "degraded")
                 final_status = "degraded"
 
+        # ------------------------------------------------------------------
+        # Step 6: Generate PDF
+        # ------------------------------------------------------------------
+        pdf_path = ""
+        if enable_pdf:
+            if cancel_event.is_set():
+                if on_phase: on_phase("pdf", "cancelled")
+                on_log("Pipeline cancelled by user.")
+                return {
+                    "success": False,
+                    "status": "cancelled",
+                    "course_dir": course_dir,
+                    "detailed_path": detailed_path,
+                    "practical_path": practical_path,
+                    "kag_html_path": kag_html_path,
+                    "pdf_path": "",
+                    "error": "Cancelled by user"
+                }
+                
+            if on_phase: on_phase("pdf", "running")
+            on_log("Step 6: Generating PDF from detailed notes...")
+            try:
+                from gateway.content_service import _convert_md_to_pdf
+                pdf_target = detailed_path.rsplit(".", 1)[0] + ".pdf"
+                _convert_md_to_pdf(detailed_path, "Textbook", pdf_target)
+                pdf_path = pdf_target
+                on_log(f"PDF saved to: {pdf_path}")
+                if on_phase: on_phase("pdf", "complete")
+            except Exception as e:
+                on_log(f"WARNING: PDF generation failed: {e}. Skipping.")
+                if on_phase: on_phase("pdf", "degraded")
+                final_status = "degraded"
+
         on_log("=== PIPELINE COMPLETED SUCCESSFULLY ===")
         # Clean up checkpoint file on success
         if os.path.exists(checkpoint_path):
@@ -846,6 +901,7 @@ def _run_llm_pipeline(
             "detailed_path": detailed_path,
             "practical_path": practical_path,
             "kag_html_path": kag_html_path,
+            "pdf_path": pdf_path,
             "error": None,
         }
 
@@ -856,8 +912,8 @@ def _run_llm_pipeline(
             "status": "failed",
             "course_dir": course_dir if 'course_dir' in locals() else "",
             "detailed_path": detailed_path,
-            "practical_path": practical_path,
-            "kag_html_path": kag_html_path,
+            "kag_html_path": kag_html_path if 'kag_html_path' in locals() else "",
+            "pdf_path": pdf_path if 'pdf_path' in locals() else "",
             "error": str(e),
         }
 

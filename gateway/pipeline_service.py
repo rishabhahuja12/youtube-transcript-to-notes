@@ -39,6 +39,7 @@ class PipelineStartRequest(BaseModel):
     enable_multimodal: bool = False
     youtube_url: Optional[str] = ""
     enable_kag: bool = False
+    enable_pdf: bool = False
     # Added fields to support URL pipeline
     is_url_pipeline: bool = False
     transcript_blocks: Optional[list] = []
@@ -126,6 +127,7 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
                 enable_multimodal=request.enable_multimodal,
                 youtube_url=request.youtube_url,
                 enable_kag=request.enable_kag,
+                enable_pdf=request.enable_pdf,
                 on_phase=on_phase
             )
         elif request.is_url_pipeline:
@@ -141,6 +143,7 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
                 enable_multimodal=request.enable_multimodal,
                 youtube_url=request.youtube_url,
                 enable_kag=request.enable_kag,
+                enable_pdf=request.enable_pdf,
                 on_phase=on_phase
             )
         else:
@@ -156,6 +159,7 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
                 enable_multimodal=request.enable_multimodal,
                 youtube_url=request.youtube_url,
                 enable_kag=request.enable_kag,
+                enable_pdf=request.enable_pdf,
                 on_phase=on_phase
             )
         
@@ -164,8 +168,25 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
         success = result.get("success", False)
         course_record = None
         if success and course_path and os.path.isdir(course_path):
-            from gateway.content_service import _add_library_entry
-            course_record = _add_library_entry(course_path)
+            from gateway.content_service import _add_library_entry, _detect_badges
+            import uuid
+            from datetime import datetime
+            
+            badges = _detect_badges(course_path)
+            title = request.video_title
+            if not title or title == "Course":
+                title = os.path.basename(course_path) or course_path
+                
+            entry_data = {
+                "id": f"course_{uuid.uuid4().hex}",
+                "path": os.path.abspath(course_path),
+                "title": title,
+                "status": status,
+                "badges": badges.model_dump() if hasattr(badges, "model_dump") else badges.dict(),
+                "created_at": datetime.utcnow().isoformat() + "Z"
+            }
+            
+            course_record = _add_library_entry(entry_data)
             result["course_record"] = course_record
         
         job_manager.finalize_job(job, status, result)

@@ -12,6 +12,9 @@ import uuid
 import re
 from pathlib import Path
 from typing import Any, Dict, List
+import platform
+from datetime import datetime
+
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -83,6 +86,8 @@ class CourseInfo(BaseModel):
     date: str
     badges: CourseBadges
     status: str = "complete"
+    created_at: str = ""
+
 
 
 class FileInfo(BaseModel):
@@ -116,59 +121,94 @@ def resolve_within_root(root: Path, user_path: str) -> Path:
         raise HTTPException(status_code=403, detail="Invalid path.")
     return candidate
 
+def _with_library_lock(func):
+    """Execute a function holding a cross-process lock on config.json.lock"""
+    def wrapper(*args, **kwargs):
+        lock_path = CONFIG_PATH + ".lock"
+        if platform.system() == "Windows":
+            import msvcrt
+            with open(lock_path, "a") as f:
+                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            with open(lock_path, "a") as f:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    return wrapper
+
+@_with_library_lock
 def _load_library_entries() -> List[Dict[str, Any]]:
-    """Load the list of library entries."""
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                
-            entries = data.get("library", [])
-            if not entries and "recent_outputs" in data:
-                for p in data["recent_outputs"]:
+    """Load the list of library entries, migrating recent_outputs if needed."""
+    if not os.path.exists(CONFIG_PATH):
+        return []
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        entries = data.get("library", [])
+        dirty = False
+        
+        # Migrate recent_outputs if they exist
+        if "recent_outputs" in data:
+            for p in data["recent_outputs"]:
+                # Ensure no duplicates by path
+                if not any(e.get("path") == p for e in entries):
                     entries.append({
                         "id": f"course_{uuid.uuid4().hex}",
                         "path": p,
                         "title": os.path.basename(p) or p,
-                        "status": "complete"
+                        "status": "complete",
+                        "badges": {"vision": False, "kag": False, "pdf": False},
+                        "created_at": datetime.utcnow().isoformat() + "Z"
                     })
-            return entries
-        except (json.JSONDecodeError, OSError):
-            return []
-    return []
+            del data["recent_outputs"]
+            data["library"] = entries
+            dirty = True
+            
+        if dirty:
+            fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+            os.replace(tmp_path, CONFIG_PATH)
+            
+        return entries
+    except (json.JSONDecodeError, OSError):
+        return []
 
-def _add_library_entry(path: str, title: str = "") -> Dict[str, Any]:
-    """Add an output directory path to the library."""
+@_with_library_lock
+def _add_library_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Add or update an output directory path in the library."""
+    path = entry_data.get("path")
     if not path:
         return {}
+        
     path = os.path.abspath(path)
-    if not os.path.isdir(path):
-        return {}
-        
-    entries = _load_library_entries()
-    entries = [e for e in entries if e.get("path") != path]
+    entry_data["path"] = path
     
-    entry_id = f"course_{uuid.uuid4().hex}"
-    if not title:
-        title = os.path.basename(path) or path
-        
-    new_entry = {
-        "id": entry_id,
-        "path": path,
-        "title": title,
-        "status": "complete",
-        "badges": {}
-    }
-    entries.insert(0, new_entry)
-    
-    try:
-        data = {}
-        if os.path.exists(CONFIG_PATH):
+    data = {}
+    if os.path.exists(CONFIG_PATH):
+        try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        
-        data["library"] = entries
-        
+        except (json.JSONDecodeError, OSError):
+            pass
+            
+    entries = data.get("library", [])
+    
+    # Remove existing entry with same path if it exists
+    entries = [e for e in entries if e.get("path") != path]
+    
+    entries.insert(0, entry_data)
+    data["library"] = entries
+    
+    try:
         fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
@@ -176,7 +216,7 @@ def _add_library_entry(path: str, title: str = "") -> Dict[str, Any]:
     except OSError as e:
         logging.error(f"Error saving library: {e}")
         
-    return new_entry
+    return entry_data
 
 def _resolve_course_dir(course_id: str) -> str:
     """Resolve a course ID to a validated directory path."""
@@ -360,7 +400,8 @@ async def get_library() -> List[CourseInfo]:
             path=path,
             date=date,
             badges=badges,
-            status=entry.get("status", "complete")
+            status=entry.get("status", "complete"),
+            created_at=entry.get("created_at", "")
         ))
     return courses
 
@@ -368,7 +409,23 @@ async def get_library() -> List[CourseInfo]:
 @app.post("/content/library/add")
 async def add_library_entry(req: LibraryAddRequest) -> Dict[str, Any]:
     """Add a directory path to the library's recent outputs."""
-    entry = _add_library_entry(req.path)
+    import uuid
+    from datetime import datetime
+    
+    path = os.path.abspath(req.path)
+    title = os.path.basename(path) or path
+    badges = _detect_badges(path)
+    
+    entry_data = {
+        "id": f"course_{uuid.uuid4().hex}",
+        "path": path,
+        "title": title,
+        "status": "complete",
+        "badges": badges.model_dump() if hasattr(badges, "model_dump") else badges.dict(),
+        "created_at": datetime.utcnow().isoformat() + "Z"
+    }
+    
+    entry = _add_library_entry(entry_data)
     return entry
 
 @app.get("/content/browse-directory")
