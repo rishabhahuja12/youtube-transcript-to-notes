@@ -82,49 +82,59 @@ const CourseWorkspace = () => {
   const [keyframes, setKeyframes] = useState([]);
 
   useEffect(() => {
+    let mounted = true;
     if (!activeCourseDir) {
       setCurrentScreen('library');
       return;
     }
-    loadCourseData();
-  }, [activeCourseDir]);
-
-  const loadCourseData = async () => {
-    setLoading(true);
-    try {
-      const files = await fetchCourse(activeCourseDir.id);
-      setCourseFiles(files);
-      
-      // Load Notes
-      const allMdFiles = files.filter(f => f.name.endsWith('.md'));
-      setMdFiles(allMdFiles);
-      if (allMdFiles.length > 0) {
-        setSelectedMdFile(allMdFiles[0].name);
-        const notes = await fetchNotes(activeCourseDir.id, allMdFiles[0].name);
-        setNotesContent(notes);
-      }
-      
-      // Load Graph
-      if (activeCourseDir.badges?.kag) {
-        const graph = await fetchCourseGraph(activeCourseDir.id);
-        const match = graph.html.match(/<div class="mermaid">([\s\S]*?)<\/div>/);
-        if (match && match[1]) {
-          setMermaidCode(match[1].trim());
+    
+    const loadCourseData = async () => {
+      setLoading(true);
+      try {
+        const files = await fetchCourse(activeCourseDir.id);
+        if (!mounted) return;
+        setCourseFiles(files);
+        
+        // Load Notes
+        const allMdFiles = files.filter(f => f.name.endsWith('.md'));
+        setMdFiles(allMdFiles);
+        if (allMdFiles.length > 0) {
+          setSelectedMdFile(allMdFiles[0].name);
+          const notes = await fetchNotes(activeCourseDir.id, allMdFiles[0].name);
+          if (!mounted) return;
+          setNotesContent(notes);
         }
+        
+        // Load Graph
+        if (activeCourseDir.badges?.kag) {
+          const graph = await fetchCourseGraph(activeCourseDir.id);
+          if (!mounted) return;
+          const match = graph.html.match(/<div class="mermaid">([\s\S]*?)<\/div>/);
+          if (match && match[1]) {
+            setMermaidCode(match[1].trim());
+          }
+        }
+        
+        // Load Keyframes
+        if (activeCourseDir.badges?.vision) {
+          const frames = await fetchCourseKeyframes(activeCourseDir.id);
+          if (!mounted) return;
+          setKeyframes(frames);
+        }
+        
+      } catch (error) {
+        console.error("Failed to load course data:", error);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      
-      // Load Keyframes
-      if (activeCourseDir.badges?.vision) {
-        const frames = await fetchCourseKeyframes(activeCourseDir.id);
-        setKeyframes(frames);
-      }
-      
-    } catch (error) {
-      console.error("Failed to load course data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    loadCourseData();
+    
+    return () => {
+      mounted = false;
+    };
+  }, [activeCourseDir, setCurrentScreen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -195,11 +205,15 @@ const CourseWorkspace = () => {
 
   const tabs = [
     { id: 'notes', label: 'Notes', icon: <FileText size={16} /> },
-    { id: 'chat', label: 'Chat', icon: <MessageSquare size={16} /> },
-    { id: 'graph', label: 'Graph', icon: <Share2 size={16} /> },
-    { id: 'pdf', label: 'Export PDF', icon: <File size={16} /> },
-    { id: 'keyframes', label: 'Keyframes', icon: <ImageIcon size={16} /> }
+    { id: 'chat', label: 'Chat', icon: <MessageSquare size={16} /> }
   ];
+  if (activeCourseDir.badges?.kag) {
+    tabs.push({ id: 'graph', label: 'Graph', icon: <Share2 size={16} /> });
+  }
+  tabs.push({ id: 'pdf', label: 'Export PDF', icon: <File size={16} /> });
+  if (activeCourseDir.badges?.vision) {
+    tabs.push({ id: 'keyframes', label: 'Keyframes', icon: <ImageIcon size={16} /> });
+  }
 
   return (
     <div className="course-workspace fade-in">

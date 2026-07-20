@@ -52,6 +52,15 @@ export const startPipeline = async (payload) => {
   return await response.json();
 };
 
+export const cancelPipeline = async (jobId) => {
+  const response = await fetch(`${API_BASE_URL}/api/pipeline/${jobId}/cancel`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
 export const fetchCourseGraph = async (id) => {
   const response = await fetch(`${API_BASE_URL}/api/content/course/${id}/graph`, {
     signal: AbortSignal.timeout(30000)
@@ -68,13 +77,15 @@ export const fetchCourseKeyframes = async (id) => {
   return await response.json();
 };
 
-export const connectPipelineWebSocket = (onMessage) => {
+export const connectPipelineWebSocket = (jobId, onMessage) => {
   let ws;
   let reconnectAttempts = 0;
   const maxReconnectAttempts = 5;
+  let closed = false;
 
   const connect = () => {
-    ws = new WebSocket(`${WS_BASE_URL}/api/pipeline/stream`);
+    if (closed) return;
+    ws = new WebSocket(`${WS_BASE_URL}/api/pipeline/stream/${jobId}`);
     
     ws.onmessage = (event) => {
       try {
@@ -86,6 +97,7 @@ export const connectPipelineWebSocket = (onMessage) => {
     };
     
     ws.onclose = () => {
+      if (closed) return;
       if (reconnectAttempts < maxReconnectAttempts) {
         const timeout = Math.pow(2, reconnectAttempts) * 1000;
         setTimeout(connect, timeout);
@@ -105,6 +117,7 @@ export const connectPipelineWebSocket = (onMessage) => {
   
   return {
     close: () => {
+      closed = true;
       reconnectAttempts = maxReconnectAttempts; // prevent reconnect
       if (ws) ws.close();
     }

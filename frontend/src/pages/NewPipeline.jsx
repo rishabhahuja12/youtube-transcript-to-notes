@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
-import { startPipeline, connectPipelineWebSocket, browseDirectory, browseFile, getProviderStatus } from '../utils/api';
+import { startPipeline, cancelPipeline, connectPipelineWebSocket, browseDirectory, browseFile, fetchPoolSettings, fetchOllamaStatus } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check, File } from 'lucide-react';
 
 const extractVideoId = (url) => {
@@ -11,7 +11,7 @@ const extractVideoId = (url) => {
 };
 
 const NewPipeline = () => {
-  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus, setActiveCourseDir, setActiveJobId, pipelineProgress } = useAppContext();
+  const { setPipelineStatus, setCurrentScreen, addLog, setPipelineProgress, pipelineStatus, setActiveCourseDir, pipelineProgress } = useAppContext();
   const [inputType, setInputType] = useState('youtube');
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
@@ -31,11 +31,24 @@ const NewPipeline = () => {
   
   const wsRef = useRef(null);
   
+  const { activeJobId, setActiveJobId } = useAppContext();
+  const [pipelinePhase, setPipelinePhase] = useState(null);
+  
   useEffect(() => {
     return () => {
       if (wsRef.current) wsRef.current.close();
     };
   }, []);
+
+  const handleCancel = async () => {
+    if (activeJobId && pipelineStatus === 'running') {
+      try {
+        await cancelPipeline(activeJobId);
+      } catch (err) {
+        addLog(`Cancel failed: ${err.message}`, 'error');
+      }
+    }
+  };
 
   const [youtubeStatus, setYoutubeStatus] = React.useState(false);
   React.useEffect(() => {
@@ -84,10 +97,29 @@ const NewPipeline = () => {
        return;
     }
     
-    const hasProviders = await getProviderStatus().catch(() => false);
-    if (!hasProviders) {
-       setError("No providers configured in the pool. Please add a provider in Settings.");
+    let poolSettings = [];
+    let health = { playwright: false };
+    try {
+       poolSettings = await fetchPoolSettings();
+       health = await fetchOllamaStatus();
+    } catch (err) {
+       console.error("Failed to fetch settings", err);
+    }
+    
+    const hasText = poolSettings.some(c => c.capability === 'text');
+    const hasVision = poolSettings.some(c => c.capability === 'vision');
+    
+    if (!hasText) {
+       setError("No text providers configured in the pool. Please add a text provider in Settings.");
        return;
+    }
+    if (powerUps.vision && !hasVision) {
+       setError("Vision power-up selected but no vision provider is configured. Please add one in Settings.");
+       return;
+    }
+    if (powerUps.pdf && !health.playwright) {
+       console.warn("Playwright not installed, PDF might fail or degrade.");
+       // Not a hard blocker, just a warning, but we can set a warning state if we wanted.
     }
     
     if (inputType === 'youtube') {
@@ -121,53 +153,68 @@ const NewPipeline = () => {
         output_dir: outputDir,
         youtube_url: isYoutube ? url : "",
         transcript_path: !isYoutube ? transcriptPath : "",
-        outline_path: !isYoutube ? outlinePath : "", 
+        timestamps_path: !isYoutube ? outlinePath : "", 
         is_url_pipeline: isYoutube,
         video_title: topic.trim() === '' ? null : topic,
         enable_multimodal: powerUps.vision || false,
-        enable_kag: powerUps.kag || false
+        enable_kag: powerUps.kag || false,
+        enable_pdf: powerUps.pdf || false
       };
       
       const res = await startPipeline(payload);
+      if (!res.success) {
+         throw new Error(res.error || res.message || "Failed to start");
+      }
       const jobId = res.job_id;
       setActiveJobId(jobId);
       setPipelineStatus('running');
+      setPipelinePhase(null);
       
-      wsRef.current = connectPipelineWebSocket((msg) => {
-        if (msg.type === 'log') {
-          addLog(msg.message, msg.level || 'info');
-          if (msg.message.includes('No Google OAuth credentials found') && inputType === 'youtube') {
-            setError("Connect YouTube in Settings for better results. Metadata might be limited.");
-          } else if (msg.message.includes('Transcript failed')) {
-             setError(youtubeStatus ? "Metadata ready, transcript unavailable — retry" : "Transcript and Metadata unavailable. Connect YouTube in Settings.");
+      wsRef.current = connectPipelineWebSocket(jobId, (msg) => {
+        if (msg.job_id && msg.job_id !== jobId) return;
+        
+        if (msg.type === 'snapshot') {
+          if (msg.status === 'running') setPipelineStatus('running');
+          else if (['complete', 'degraded', 'failed', 'cancelled'].includes(msg.status)) {
+             handleTerminalState(msg.status, msg.result);
           }
+        } else if (msg.type === 'log') {
+          addLog(msg.message, msg.level || 'info');
         } else if (msg.type === 'progress') {
           setPipelineProgress({ current: msg.current, total: msg.total });
         } else if (msg.type === 'phase') {
+          setPipelinePhase({ phase: msg.phase, status: msg.status });
           addLog(`Phase ${msg.phase} status: ${msg.status}`, 'info');
-        } else if (msg.type === 'complete') {
-          if (wsRef.current) wsRef.current.close();
-          if (msg.success === false) {
-             setPipelineStatus('failed');
-             addLog(`Pipeline failed to complete: ${msg.result?.error || 'Unknown error'}`, 'error');
-             setError(msg.result?.error || 'Pipeline failed to complete');
-          } else {
-             setPipelineStatus('completed');
-             addLog('Pipeline completed successfully!', 'success');
-             if (msg.course_record) {
-                setActiveCourseDir(msg.course_record);
-                setCurrentScreen('courseWorkspace');
-             } else {
-                setCurrentScreen('courseWorkspace');
-             }
-          }
+        } else if (msg.type === 'terminal') {
+          handleTerminalState(msg.status, msg.result);
         } else if (msg.type === 'error') {
-          if (wsRef.current) wsRef.current.close();
-          setPipelineStatus('failed');
-          addLog(`Pipeline error: ${msg.message}`, 'error');
-          setError(err => err || msg.message);
+          handleTerminalState('failed', { error: msg.message });
         }
       });
+      
+      const handleTerminalState = (status, result) => {
+        if (wsRef.current) wsRef.current.close();
+        
+        if (status === 'complete' || status === 'degraded') {
+           setPipelineStatus(status);
+           if (status === 'complete') addLog('Pipeline completed successfully!', 'success');
+           if (status === 'degraded') addLog('Pipeline completed with degraded output.', 'warning');
+           
+           if (result && result.course_record) {
+              setActiveCourseDir(result.course_record);
+           }
+           setCurrentScreen('courseWorkspace');
+        } else if (status === 'failed') {
+           setPipelineStatus('failed');
+           addLog(`Pipeline failed: ${result?.error || 'Unknown error'}`, 'error');
+           setError(result?.error || 'Pipeline failed to complete');
+        } else if (status === 'cancelled') {
+           setPipelineStatus('cancelled');
+           addLog('Pipeline cancelled by user.', 'info');
+           // Keep user on pipeline screen, no error language
+           setError(null);
+        }
+      };
       
     } catch (err) {
       setError(err.message || 'Failed to start pipeline');
@@ -308,7 +355,14 @@ const NewPipeline = () => {
           {pipelineStatus === 'running' && (
              <div className="status-panel panel-card">
                 <h3 className="serif-heading">Job Status: {pipelineStatus}</h3>
+                {pipelinePhase && <p>Phase: {pipelinePhase.phase} ({pipelinePhase.status})</p>}
                 <p>Progress: {pipelineProgress?.current || 0} / {pipelineProgress?.total || 100}</p>
+             </div>
+          )}
+          {pipelineStatus === 'cancelled' && (
+             <div className="status-panel panel-card">
+                <h3 className="serif-heading">Job Cancelled</h3>
+                <p>You can start a new job or modify your settings.</p>
              </div>
           )}
 
@@ -327,6 +381,11 @@ const NewPipeline = () => {
                      </button>
                   )}
                </div>
+            )}
+            {pipelineStatus === 'running' && (
+               <button type="button" onClick={handleCancel} className="secondary-button" style={{marginRight: '1rem'}}>
+                  Cancel Pipeline
+               </button>
             )}
             <button type="submit" form="pipeline-form" className="primary-button start-pipeline-button" 
                disabled={isSubmitting || pipelineStatus === 'running'}>

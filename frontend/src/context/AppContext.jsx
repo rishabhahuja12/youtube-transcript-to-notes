@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useMemo } from 'react';
 import { fetchOllamaStatus } from '../utils/api';
 
 const AppContext = createContext();
@@ -43,24 +43,35 @@ export const AppProvider = ({ children }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const addLog = (message, type = 'info') => {
+  const addLog = useCallback((message, type = 'info') => {
     dispatch({ 
       type: 'SET_PIPELINE_LOGS', 
-      payload: (prev) => [...prev, { id: Date.now(), message, type, time: new Date().toLocaleTimeString() }] 
+      payload: (prev) => {
+        const newLogs = [...prev, { id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2), message, type, time: new Date().toLocaleTimeString() }];
+        return newLogs.slice(-500);
+      }
     });
-  };
+  }, []);
 
-  const value = {
+  const setCurrentScreen = useCallback((val) => dispatch({ type: 'SET_SCREEN', payload: val }), []);
+  const setActiveCourseDir = useCallback((val) => dispatch({ type: 'SET_COURSE_DIR', payload: val }), []);
+  const setActiveJobId = useCallback((val) => dispatch({ type: 'SET_ACTIVE_JOB_ID', payload: val }), []);
+  const setPipelineStatus = useCallback((val) => dispatch({ type: 'SET_PIPELINE_STATUS', payload: val }), []);
+  const setPipelineLogs = useCallback((val) => dispatch({ type: 'SET_PIPELINE_LOGS', payload: val }), []);
+  const setPipelineProgress = useCallback((val) => dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: val }), []);
+  const setOllamaStatus = useCallback((val) => dispatch({ type: 'SET_OLLAMA_STATUS', payload: val }), []);
+
+  const value = useMemo(() => ({
     ...state,
-    setCurrentScreen: (val) => dispatch({ type: 'SET_SCREEN', payload: val }),
-    setActiveCourseDir: (val) => dispatch({ type: 'SET_COURSE_DIR', payload: val }),
-    setActiveJobId: (val) => dispatch({ type: 'SET_ACTIVE_JOB_ID', payload: val }),
-    setPipelineStatus: (val) => dispatch({ type: 'SET_PIPELINE_STATUS', payload: val }),
-    setPipelineLogs: (val) => dispatch({ type: 'SET_PIPELINE_LOGS', payload: val }),
-    setPipelineProgress: (val) => dispatch({ type: 'SET_PIPELINE_PROGRESS', payload: val }),
-    setOllamaStatus: (val) => dispatch({ type: 'SET_OLLAMA_STATUS', payload: val }),
+    setCurrentScreen,
+    setActiveCourseDir,
+    setActiveJobId,
+    setPipelineStatus,
+    setPipelineLogs,
+    setPipelineProgress,
+    setOllamaStatus,
     addLog
-  };
+  }), [state, setCurrentScreen, setActiveCourseDir, setActiveJobId, setPipelineStatus, setPipelineLogs, setPipelineProgress, setOllamaStatus, addLog]);
 
   return (
     <AppContext.Provider value={value}>
