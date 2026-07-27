@@ -423,6 +423,29 @@ async def serve_static_file(id: str, filename: str) -> FileResponse:
 
     return FileResponse(filepath)
 
+
+@app.delete("/content/file/{id}/{filename}")
+async def delete_course_file(id: str, filename: str) -> Dict[str, bool]:
+    """Safely delete a file from a validated course directory."""
+    course_dir = _resolve_course_dir(id)
+    course_root = Path(course_dir).resolve()
+    try:
+        requested_path = resolve_within_root(course_root, filename)
+    except Exception:
+        logging.error(f"Path traversal blocked for delete: {filename}")
+        raise HTTPException(status_code=403, detail="Invalid filename.")
+        
+    filepath = str(requested_path)
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    try:
+        os.remove(filepath)
+        return {"success": True}
+    except OSError as exc:
+        logging.error(f"Error removing file {filepath}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {exc}") from exc
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Settings Endpoints
 # ═══════════════════════════════════════════════════════════════════════

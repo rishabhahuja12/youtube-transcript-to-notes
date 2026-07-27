@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { fetchCourse, fetchNotes, fetchCourseGraph, fetchCourseKeyframes, chatWithCourse, clearChat, generatePdf, API_BASE_URL } from '../utils/api';
+import { fetchCourse, fetchNotes, fetchCourseGraph, fetchCourseKeyframes, chatWithCourse, clearChat, generatePdf, deleteCourseFile, API_BASE_URL } from '../utils/api';
 import ChatBubble from '../components/ChatBubble';
 import ThemeCard from '../components/ThemeCard';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import mermaid from 'mermaid';
-import { ArrowLeft, Send, Download, RefreshCw, FileText, MessageSquare, Share2, File, Image as ImageIcon, Eye } from 'lucide-react';
+import { ArrowLeft, Send, Download, RefreshCw, FileText, MessageSquare, Share2, File, Image as ImageIcon, Eye, Trash2 } from 'lucide-react';
 import './CourseWorkspace.css';
 
 mermaid.initialize({
@@ -78,6 +78,7 @@ const CourseWorkspace = () => {
   const [selectedTheme, setSelectedTheme] = useState(PDF_THEMES[0].name);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [generatedPdfPath, setGeneratedPdfPath] = useState(null);
+  const [pdfError, setPdfError] = useState(null);
 
   // Keyframes State
   const [keyframes, setKeyframes] = useState([]);
@@ -384,7 +385,7 @@ const CourseWorkspace = () => {
                 <button 
                   className="secondary-button" 
                   onClick={handlePreviewPdf}
-                  disabled={!generatedPdfPath && !courseFiles.some(f => f.name.toLowerCase().endsWith('.pdf'))}
+                  disabled={!generatedPdfPath && pdfFilesList.length === 0}
                 >
                   <Eye size={18} /> Preview PDF
                 </button>
@@ -403,6 +404,40 @@ const CourseWorkspace = () => {
                   <span className="success-text">✓ PDF Exported Successfully!</span>
                 )}
               </div>
+
+              {pdfFilesList.length > 0 && (
+                <div className="pdf-files-manage-section" style={{ marginTop: 'var(--space-xl)', paddingTop: 'var(--space-lg)', borderTop: '1px solid var(--hairline)' }}>
+                  <h4 style={{ fontSize: '0.95rem', marginBottom: 'var(--space-md)', color: 'var(--text-primary)' }}>Exported PDF Files</h4>
+                  <div className="pdf-files-list" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                    {pdfFilesList.map(pdf => (
+                      <div key={pdf.name} className="pdf-file-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-sm) var(--space-md)', background: 'var(--ink)', border: '1px solid var(--hairline)', borderRadius: 'var(--radius-sm)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                          <File size={16} color="var(--highlighter)" />
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85rem' }}>{pdf.name}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                          <button 
+                            type="button" 
+                            className="secondary-button"
+                            style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                            onClick={() => window.open(`${API_BASE_URL}/static/${activeCourseDir.id}/${encodeURIComponent(pdf.name)}`, '_blank')}
+                          >
+                            <Eye size={14} /> Open
+                          </button>
+                          <button 
+                            type="button" 
+                            className="delete-btn"
+                            title={`Delete ${pdf.name}`}
+                            onClick={() => handleDeletePdf(pdf.name)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

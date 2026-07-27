@@ -278,3 +278,12 @@ export const getProviderStatus = async () => {
   const data = await fetchPoolSettings();
   return data && data.length > 0;
 };
+
+export const deleteCourseFile = async (id, filename) => {
+  const response = await fetch(`${API_BASE_URL}/api/content/file/${id}/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
