@@ -7,6 +7,7 @@ const FolderPickerModal = ({ isOpen, onClose, onSelect, initialPath = '' }) => {
   const [currentPath, setCurrentPath] = useState(initialPath);
   const [parentPath, setParentPath] = useState('');
   const [subdirectories, setSubdirectories] = useState([]);
+  const [drives, setDrives] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -16,8 +17,11 @@ const FolderPickerModal = ({ isOpen, onClose, onSelect, initialPath = '' }) => {
     try {
       const data = await listDirectories(targetPath);
       setCurrentPath(data.current_path || '');
-      setParentPath(data.parent_path || '');
+      setParentPath(data.parent_path !== undefined ? data.parent_path : '');
       setSubdirectories(data.subdirectories || []);
+      if (data.drives && data.drives.length > 0) {
+        setDrives(data.drives);
+      }
     } catch (err) {
       console.error('Failed to list directory contents:', err);
       setError(err.message || 'Failed to read directory');
@@ -52,7 +56,7 @@ const FolderPickerModal = ({ isOpen, onClose, onSelect, initialPath = '' }) => {
             type="button"
             className="up-button secondary-button"
             onClick={() => fetchFolderContents(parentPath)}
-            disabled={!parentPath || loading}
+            disabled={parentPath === null || parentPath === undefined || loading}
             title="Go up one folder"
           >
             <ArrowUp size={16} /> Up
@@ -76,6 +80,22 @@ const FolderPickerModal = ({ isOpen, onClose, onSelect, initialPath = '' }) => {
             <RefreshCw size={16} className={loading ? 'loader-spin' : ''} />
           </button>
         </div>
+
+        {drives.length > 0 && (
+          <div className="folder-picker-drives-bar">
+            <span className="drives-label">Quick Drives:</span>
+            {drives.map(drive => (
+              <button
+                key={drive.path}
+                type="button"
+                className={`drive-chip ${currentPath.toUpperCase().startsWith(drive.path.substring(0, 2).toUpperCase()) ? 'active' : ''}`}
+                onClick={() => fetchFolderContents(drive.path)}
+              >
+                <HardDrive size={14} /> {drive.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="folder-picker-body">
           {error && <div className="status-alert error">{error}</div>}

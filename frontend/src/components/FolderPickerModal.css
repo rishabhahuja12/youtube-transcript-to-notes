@@ -80,6 +80,49 @@
   font-size: 0.85rem;
 }
 
+.folder-picker-drives-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--space-lg);
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid var(--hairline);
+  overflow-x: auto;
+}
+
+.drives-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.drive-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.drive-chip:hover,
+.drive-chip.active {
+  background: var(--highlighter);
+  color: #000;
+  border-color: var(--highlighter);
+  font-weight: 600;
+}
+
 .folder-picker-body {
   flex: 1;
   min-height: 280px;

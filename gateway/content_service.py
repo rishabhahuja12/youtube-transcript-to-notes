@@ -331,21 +331,41 @@ def get_user_presets() -> Dict[str, str]:
     return presets
 
 
-@app.get("/content/list-directories")
-def list_directories(path: Optional[str] = None) -> Dict[str, Any]:
-    """Safely list available subdirectories on disk for in-app folder picker."""
-    if not path or not path.strip():
-        if sys.platform == "win32":
+def _get_windows_drives() -> List[Dict[str, str]]:
+    """Return all active logical drive letters on Windows using kernel32 API."""
+    drives = []
+    if sys.platform == "win32":
+        try:
+            import ctypes
             import string
-            drives = []
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            for letter in string.ascii_uppercase:
+                if bitmask & 1:
+                    d = f"{letter}:\\"
+                    drives.append({"name": f"Local Disk ({letter}:)", "path": d})
+                bitmask >>= 1
+        except Exception as exc:
+            logging.warning(f"ctypes drive detection failed: {exc}")
+            import string
             for letter in string.ascii_uppercase:
                 d = f"{letter}:\\"
                 if os.path.exists(d):
                     drives.append({"name": f"Local Disk ({letter}:)", "path": d})
+    return drives
+
+
+@app.get("/content/list-directories")
+def list_directories(path: Optional[str] = None) -> Dict[str, Any]:
+    """Safely list available subdirectories on disk for in-app folder picker."""
+    all_drives = _get_windows_drives() if sys.platform == "win32" else []
+
+    if not path or not path.strip():
+        if sys.platform == "win32":
             return {
                 "current_path": "",
                 "parent_path": "",
-                "subdirectories": drives
+                "subdirectories": all_drives,
+                "drives": all_drives
             }
         else:
             path = "/"
@@ -355,7 +375,7 @@ def list_directories(path: Optional[str] = None) -> Dict[str, Any]:
         target_path = os.path.expanduser("~")
 
     parent_path = os.path.dirname(target_path)
-    if parent_path == target_path:
+    if parent_path == target_path or (sys.platform == "win32" and len(target_path) <= 3 and target_path.endswith(":\\")):
         parent_path = ""
 
     subdirs = []
@@ -380,7 +400,8 @@ def list_directories(path: Optional[str] = None) -> Dict[str, Any]:
     return {
         "current_path": target_path,
         "parent_path": parent_path,
-        "subdirectories": subdirs
+        "subdirectories": subdirs,
+        "drives": all_drives
     }
 
 
