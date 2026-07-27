@@ -5,6 +5,7 @@ Runs on Port 8003.
 import json
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 import urllib.request
@@ -271,6 +272,26 @@ def browse_directory(path: Optional[str] = None) -> Dict[str, str]:
     if path and os.path.exists(path):
         return {"path": os.path.abspath(path)}
 
+    if sys.platform == "win32":
+        ps_script = (
+            '[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; '
+            '$f = New-Object System.Windows.Forms.FolderBrowserDialog; '
+            '$f.Description = "Select Output Directory"; '
+            'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }'
+        )
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            selected = res.stdout.strip()
+            if selected and os.path.exists(selected):
+                return {"path": os.path.abspath(selected)}
+        except Exception as exc:
+            logging.warning(f"PowerShell folder dialog failed: {exc}")
+
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -282,7 +303,7 @@ def browse_directory(path: Optional[str] = None) -> Dict[str, str]:
         if selected:
             return {"path": os.path.abspath(selected)}
     except Exception as exc:
-        logging.warning(f"Native folder dialog unavailable: {exc}")
+        logging.warning(f"Tkinter folder dialog failed: {exc}")
 
     fallback = os.path.abspath(os.path.join(SCRIPT_DIR, "output"))
     return {"path": fallback}
@@ -293,6 +314,26 @@ def browse_file(path: Optional[str] = None) -> Dict[str, str]:
     """Open native OS file picker dialog or return resolved path."""
     if path and os.path.isfile(path):
         return {"path": os.path.abspath(path)}
+
+    if sys.platform == "win32":
+        ps_script = (
+            '[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; '
+            '$f = New-Object System.Windows.Forms.OpenFileDialog; '
+            '$f.Title = "Select File"; '
+            'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }'
+        )
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            selected = res.stdout.strip()
+            if selected and os.path.isfile(selected):
+                return {"path": os.path.abspath(selected)}
+        except Exception as exc:
+            logging.warning(f"PowerShell file dialog failed: {exc}")
 
     try:
         import tkinter as tk
@@ -305,7 +346,7 @@ def browse_file(path: Optional[str] = None) -> Dict[str, str]:
         if selected:
             return {"path": os.path.abspath(selected)}
     except Exception as exc:
-        logging.warning(f"Native file dialog unavailable: {exc}")
+        logging.warning(f"Tkinter file dialog failed: {exc}")
 
     return {"path": ""}
 
