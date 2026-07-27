@@ -267,21 +267,47 @@ async def delete_library_entry(course_id: str) -> Dict[str, bool]:
 
 @app.get("/content/browse-directory")
 def browse_directory(path: Optional[str] = None) -> Dict[str, str]:
-    """Return a safe headless path handler for output directory selection."""
+    """Open native OS folder picker dialog or return resolved path."""
     if path and os.path.exists(path):
-        resolved = os.path.abspath(path)
-    else:
-        resolved = os.path.abspath(os.path.join(SCRIPT_DIR, "output"))
-    return {"path": resolved}
+        return {"path": os.path.abspath(path)}
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        selected = filedialog.askdirectory(title="Select Output Directory")
+        root.destroy()
+        if selected:
+            return {"path": os.path.abspath(selected)}
+    except Exception as exc:
+        logging.warning(f"Native folder dialog unavailable: {exc}")
+
+    fallback = os.path.abspath(os.path.join(SCRIPT_DIR, "output"))
+    return {"path": fallback}
+
 
 @app.get("/content/browse-file")
 def browse_file(path: Optional[str] = None) -> Dict[str, str]:
-    """Return a safe headless path handler for file selection."""
+    """Open native OS file picker dialog or return resolved path."""
     if path and os.path.isfile(path):
-        resolved = os.path.abspath(path)
-    else:
-        resolved = ""
-    return {"path": resolved}
+        return {"path": os.path.abspath(path)}
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        selected = filedialog.askopenfilename(title="Select File")
+        root.destroy()
+        if selected:
+            return {"path": os.path.abspath(selected)}
+    except Exception as exc:
+        logging.warning(f"Native file dialog unavailable: {exc}")
+
+    return {"path": ""}
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Course Endpoints

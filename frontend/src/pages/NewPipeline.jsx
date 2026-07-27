@@ -260,13 +260,23 @@ const NewPipeline = () => {
           
           <div className="input-field">
              <label htmlFor="output-dir">Output Directory (Required)</label>
-             <div className="input-group">
+             <div className="input-group" style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+               <input 
+                 id="output-dir"
+                 type="text" 
+                 className="text-input" 
+                 placeholder="Select or enter output directory path..."
+                 value={outputDir}
+                 onChange={(e) => setOutputDir(e.target.value)}
+                 required
+               />
                <button 
                  type="button" 
                  onClick={handleBrowseDir} 
-                 className="secondary-button browse-button"
+                 className="secondary-button"
+                 style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
                >
-                 <Folder size={18} /> {outputDir || "Browse Output Directory"}
+                 <Folder size={18} /> Browse
                </button>
              </div>
           </div>
