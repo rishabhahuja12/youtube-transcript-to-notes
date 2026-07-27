@@ -36,7 +36,8 @@ const Library = () => {
   const handleDeleteCourse = async (course) => {
     if (!window.confirm(`Are you sure you want to remove "${course.title || 'this course'}" from your library?`)) return;
     try {
-      await deleteLibraryEntry(course.id);
+      const targetId = course.id || course.path;
+      await deleteLibraryEntry(targetId);
       await loadLibrary();
     } catch (err) {
       console.error("Failed to delete course:", err);

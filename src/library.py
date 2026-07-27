@@ -139,14 +139,18 @@ def add_library_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def remove_library_entry(course_id: str) -> bool:
-    """Remove a course entry from the library configuration.
+    """Remove a course entry from the library configuration by ID, path, or title.
 
     Args:
-        course_id: Unique course ID string.
+        course_id: Unique course ID string, path, or title.
 
     Returns:
         bool: True if removed successfully, False if not found.
     """
+    target_str = str(course_id).strip()
+    if not target_str:
+        return False
+
     data = {}
     if os.path.exists(CONFIG_PATH):
         try:
@@ -157,12 +161,22 @@ def remove_library_entry(course_id: str) -> bool:
 
     entries = data.get("library", [])
     initial_len = len(entries)
-    entries = [e for e in entries if str(e.get("id")) != str(course_id)]
+    
+    new_entries = []
+    for e in entries:
+        eid = str(e.get("id", "")).strip()
+        epath = str(e.get("path", "")).strip()
+        etitle = str(e.get("title", "")).strip()
+        
+        # Match ID, exact path, normalized path, or title
+        if target_str in (eid, epath, etitle) or (epath and os.path.abspath(epath) == os.path.abspath(target_str)):
+            continue
+        new_entries.append(e)
 
-    if len(entries) == initial_len:
+    if len(new_entries) == initial_len:
         return False
 
-    data["library"] = entries
+    data["library"] = new_entries
     try:
         fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
         with os.fdopen(fd, "w", encoding="utf-8") as f:

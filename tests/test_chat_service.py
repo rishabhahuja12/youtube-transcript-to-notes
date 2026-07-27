@@ -41,7 +41,7 @@ def mock_config(
     config_file.write_text(
         json.dumps(config_data), encoding="utf-8"
     )
-    with patch("gateway.content_service.CONFIG_PATH", str(config_file)):
+    with patch("gateway.content_service.CONFIG_PATH", str(config_file)), patch("src.library.CONFIG_PATH", str(config_file)):
         yield str(config_file)
 
 

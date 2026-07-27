@@ -1322,13 +1322,16 @@ p {
 .status-badge-overlay {
   position: absolute;
   top: 10px;
-  right: 10px;
+  left: 10px;
   font-size: 0.75rem;
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 4px;
-  background: var(--panel);
+  background: rgba(26, 30, 38, 0.9);
   border: 1px solid var(--hairline);
+  color: var(--text-primary);
   text-transform: capitalize;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .input-group {
