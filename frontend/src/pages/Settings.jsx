@@ -86,16 +86,38 @@ const Settings = () => {
 
   const [isConnectingYt, setIsConnectingYt] = useState(false);
 
+  useEffect(() => {
+    let pollTimer;
+    if (isConnectingYt) {
+      pollTimer = setInterval(async () => {
+        try {
+          const ytStatus = await fetchYouTubeStatus();
+          if (ytStatus && ytStatus.connected) {
+            setYoutubeConnected(true);
+            setIsConnectingYt(false);
+          }
+        } catch (e) {}
+      }, 3000);
+    }
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [isConnectingYt]);
+
   const handleConnectYoutube = async () => {
     try {
       setIsConnectingYt(true);
       setError(null);
       const res = await connectYouTube();
-      setYoutubeConnected(res.connected);
+      if (res && res.auth_url) {
+        window.open(res.auth_url, '_blank');
+      } else if (res && res.connected) {
+        setYoutubeConnected(true);
+        setIsConnectingYt(false);
+      }
     } catch (err) {
       console.error(err);
       setError('Failed to connect YouTube: ' + (err.message || 'OAuth prompt cancelled'));
-    } finally {
       setIsConnectingYt(false);
     }
   };
@@ -252,6 +274,16 @@ const Settings = () => {
             )}
           </div>
         </div>
+        {isConnectingYt && (
+          <div className="status-alert info" style={{ marginTop: '12px', fontSize: '0.85rem', lineHeight: '1.5' }}>
+            💡 <strong>Google OAuth Login Opened:</strong>
+            <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
+              <li>Sign in to your Google Account in the opened browser tab.</li>
+              <li>If Google displays <em>"Google hasn't verified this app"</em>, click <strong>Advanced</strong> ➔ <strong>Go to YT Transcriptor (unsafe)</strong> ➔ <strong>Allow</strong>.</li>
+              <li>Once allowed, YouTube status will automatically update to <strong>Connected</strong>!</li>
+            </ol>
+          </div>
+        )}
       </section>
 
       {/* API Keys */}

@@ -753,12 +753,12 @@ async def get_youtube_status() -> Dict[str, bool]:
 
 
 @app.post("/settings/youtube/connect")
-def connect_youtube_endpoint() -> Dict[str, bool]:
-    """Trigger YouTube OAuth login flow."""
-    from src.auth import connect_youtube
+def connect_youtube_endpoint() -> Dict[str, Any]:
+    """Trigger non-blocking YouTube OAuth login flow and return auth URL."""
+    from src.auth import start_youtube_oauth
     try:
-        connect_youtube()
-        return {"connected": True}
+        url = start_youtube_oauth()
+        return {"connected": False, "auth_url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
