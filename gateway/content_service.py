@@ -273,15 +273,19 @@ def browse_directory(path: Optional[str] = None) -> Dict[str, str]:
         return {"path": os.path.abspath(path)}
 
     if sys.platform == "win32":
-        ps_script = (
-            '[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; '
-            '$f = New-Object System.Windows.Forms.FolderBrowserDialog; '
-            '$f.Description = "Select Output Directory"; '
-            'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }'
-        )
+        import base64
+        ps_code = """
+Add-Type -AssemblyName System.Windows.Forms
+$f = New-Object System.Windows.Forms.FolderBrowserDialog
+$f.Description = "Select Output Directory"
+if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $f.SelectedPath
+}
+"""
+        encoded = base64.b64encode(ps_code.encode("utf-16le")).decode("utf-8")
         try:
             res = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                ["powershell", "-NoProfile", "-EncodedCommand", encoded],
                 capture_output=True,
                 text=True,
                 timeout=120
@@ -316,15 +320,19 @@ def browse_file(path: Optional[str] = None) -> Dict[str, str]:
         return {"path": os.path.abspath(path)}
 
     if sys.platform == "win32":
-        ps_script = (
-            '[System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms") | Out-Null; '
-            '$f = New-Object System.Windows.Forms.OpenFileDialog; '
-            '$f.Title = "Select File"; '
-            'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }'
-        )
+        import base64
+        ps_code = """
+Add-Type -AssemblyName System.Windows.Forms
+$f = New-Object System.Windows.Forms.OpenFileDialog
+$f.Title = "Select File"
+if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $f.FileName
+}
+"""
+        encoded = base64.b64encode(ps_code.encode("utf-16le")).decode("utf-8")
         try:
             res = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                ["powershell", "-NoProfile", "-EncodedCommand", encoded],
                 capture_output=True,
                 text=True,
                 timeout=120
