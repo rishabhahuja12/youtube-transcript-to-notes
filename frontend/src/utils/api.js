@@ -280,7 +280,7 @@ export const getProviderStatus = async () => {
 };
 
 export const deleteCourseFile = async (id, filename) => {
-  const response = await fetch(`${API_BASE_URL}/api/content/file/${id}/${encodeURIComponent(filename)}`, {
+  const response = await fetch(`${API_BASE_URL}/content/file/${id}/${encodeURIComponent(filename)}`, {
     method: 'DELETE',
     signal: AbortSignal.timeout(30000)
   });
@@ -289,7 +289,7 @@ export const deleteCourseFile = async (id, filename) => {
 };
 
 export const deleteLibraryEntry = async (courseId) => {
-  const response = await fetch(`${API_BASE_URL}/api/content/library/${courseId}`, {
+  const response = await fetch(`${API_BASE_URL}/content/library/${encodeURIComponent(courseId)}`, {
     method: 'DELETE',
     signal: AbortSignal.timeout(30000)
   });
