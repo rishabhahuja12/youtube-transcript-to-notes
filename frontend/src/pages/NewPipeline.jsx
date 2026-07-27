@@ -60,8 +60,6 @@ const NewPipeline = () => {
     fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
   }, []);
 
-  const dirInputRef = useRef(null);
-
   const handleBrowseDir = async () => {
     // 1. PyWebView Desktop Native Dialog
     if (window.pywebview && window.pywebview.api && window.pywebview.api.select_folder) {
@@ -76,9 +74,15 @@ const NewPipeline = () => {
       }
     }
 
-    // 2. Trigger HTML5 Directory Picker (opens File Explorer cleanly without system files block)
-    if (dirInputRef.current) {
-      dirInputRef.current.click();
+    // 2. Backend Endpoint Native Windows Dialog
+    try {
+      const data = await browseDirectory();
+      if (data && data.path) {
+        setOutputDir(data.path);
+        return;
+      }
+    } catch (err) {
+      console.error('Browse failed:', err);
     }
   };
   
@@ -291,22 +295,6 @@ const NewPipeline = () => {
                >
                  <Folder size={18} /> Browse
                </button>
-               <input 
-                 type="file" 
-                 ref={dirInputRef}
-                 style={{ display: 'none' }}
-                 webkitdirectory="true"
-                 directory="true"
-                 onChange={(e) => {
-                   if (e.target.files && e.target.files.length > 0) {
-                     const firstFile = e.target.files[0];
-                     const relPath = firstFile.webkitRelativePath || '';
-                     const folderName = relPath.split('/')[0] || firstFile.name;
-                     const fullPath = firstFile.path ? firstFile.path.substring(0, firstFile.path.lastIndexOf(firstFile.name) - 1) : folderName;
-                     setOutputDir(fullPath);
-                   }
-                 }}
-               />
              </div>
           </div>
 
