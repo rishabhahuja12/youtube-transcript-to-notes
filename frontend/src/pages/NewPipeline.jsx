@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
+import FolderPickerModal from '../components/FolderPickerModal';
 import { useAppContext } from '../context/AppContext';
-import { startPipeline, cancelPipeline, connectPipelineWebSocket, browseDirectory, browseFile, fetchPoolSettings, fetchOllamaStatus, fetchYouTubeStatus } from '../utils/api';
+import { startPipeline, cancelPipeline, connectPipelineWebSocket, browseDirectory, browseFile, fetchPoolSettings, fetchOllamaStatus, fetchYouTubeStatus, fetchUserPresets } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check, File } from 'lucide-react';
 
 const extractVideoId = (url) => {
@@ -16,6 +17,8 @@ const NewPipeline = () => {
   const [url, setUrl] = useState('');
   const [topic, setTopic] = useState('');
   const [outputDir, setOutputDir] = useState('');
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [userPresets, setUserPresets] = useState({});
   
   const [transcriptPath, setTranscriptPath] = useState('');
   const [outlinePath, setOutlinePath] = useState('');
@@ -34,6 +37,17 @@ const NewPipeline = () => {
   const { activeJobId, setActiveJobId } = useAppContext();
   const [pipelinePhase, setPipelinePhase] = useState(null);
   const [thumbError, setThumbError] = useState(false);
+
+  useEffect(() => {
+    fetchUserPresets()
+      .then(data => {
+        setUserPresets(data || {});
+        if (data && data["Default Output"]) {
+          setOutputDir(prev => prev || data["Default Output"]);
+        }
+      })
+      .catch(() => {});
+  }, []);
   
   useEffect(() => {
     setThumbError(false);
@@ -74,16 +88,8 @@ const NewPipeline = () => {
       }
     }
 
-    // 2. Backend Endpoint Native Windows Dialog
-    try {
-      const data = await browseDirectory();
-      if (data && data.path) {
-        setOutputDir(data.path);
-        return;
-      }
-    } catch (err) {
-      console.error('Browse failed:', err);
-    }
+    // 2. Open In-App Folder Picker Modal
+    setIsFolderModalOpen(true);
   };
   
   const handleBrowseTranscript = async () => {
@@ -296,6 +302,30 @@ const NewPipeline = () => {
                  <Folder size={18} /> Browse
                </button>
              </div>
+             {Object.keys(userPresets).length > 0 && (
+               <div className="output-dir-presets" style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                 {Object.entries(userPresets).map(([label, path]) => (
+                   <button
+                     key={label}
+                     type="button"
+                     className="preset-pill-button"
+                     style={{
+                       padding: '4px 10px',
+                       fontSize: '0.78rem',
+                       borderRadius: '12px',
+                       background: 'rgba(255, 255, 255, 0.05)',
+                       border: '1px solid var(--hairline)',
+                       color: 'var(--text-secondary)',
+                       cursor: 'pointer',
+                       transition: 'all 0.15s ease'
+                     }}
+                     onClick={() => setOutputDir(path)}
+                   >
+                     📁 {label}
+                   </button>
+                 ))}
+               </div>
+             )}
           </div>
 
           {inputType === 'youtube' ? (
@@ -453,6 +483,12 @@ const NewPipeline = () => {
           </div>
         </div>
       </div>
+      <FolderPickerModal
+        isOpen={isFolderModalOpen}
+        onClose={() => setIsFolderModalOpen(false)}
+        onSelect={(p) => setOutputDir(p)}
+        initialPath={outputDir}
+      />
     </div>
   );
 };

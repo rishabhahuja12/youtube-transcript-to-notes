@@ -313,6 +313,70 @@ if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     return {"path": fallback}
 
 
+@app.get("/content/user-presets")
+def get_user_presets() -> Dict[str, str]:
+    """Return common user directory paths for quick preset selection."""
+    home = os.path.expanduser("~")
+    default_out = os.path.abspath(os.path.join(SCRIPT_DIR, "output"))
+    desktop = os.path.join(home, "Desktop")
+    documents = os.path.join(home, "Documents")
+    downloads = os.path.join(home, "Downloads")
+
+    presets = {
+        "Default Output": default_out,
+        "Desktop": os.path.abspath(desktop) if os.path.exists(desktop) else home,
+        "Documents": os.path.abspath(documents) if os.path.exists(documents) else home,
+        "Downloads": os.path.abspath(downloads) if os.path.exists(downloads) else home,
+    }
+    return presets
+
+
+@app.get("/content/list-directories")
+def list_directories(path: Optional[str] = None) -> Dict[str, Any]:
+    """Safely list available subdirectories on disk for in-app folder picker."""
+    if not path or not path.strip():
+        if sys.platform == "win32":
+            import string
+            drives = []
+            for letter in string.ascii_uppercase:
+                d = f"{letter}:\\"
+                if os.path.exists(d):
+                    drives.append({"name": f"Local Disk ({letter}:)", "path": d})
+            return {
+                "current_path": "",
+                "parent_path": "",
+                "subdirectories": drives
+            }
+        else:
+            path = "/"
+
+    target_path = os.path.abspath(path.strip())
+    if not os.path.exists(target_path) or not os.path.isdir(target_path):
+        target_path = os.path.expanduser("~")
+
+    parent_path = os.path.dirname(target_path)
+    if parent_path == target_path:
+        parent_path = ""
+
+    subdirs = []
+    try:
+        with os.scandir(target_path) as entries:
+            for entry in sorted(entries, key=lambda e: e.name.lower()):
+                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith('.'):
+                    subdirs.append({
+                        "name": entry.name,
+                        "path": os.path.abspath(entry.path)
+                    })
+    except (PermissionError, OSError) as exc:
+        logging.warning(f"Permission error scanning directory {target_path}: {exc}")
+
+    return {
+        "current_path": target_path,
+        "parent_path": parent_path,
+        "subdirectories": subdirs
+    }
+
+
 @app.get("/content/browse-file")
 def browse_file(path: Optional[str] = None) -> Dict[str, str]:
     """Open native OS file picker dialog or return resolved path."""

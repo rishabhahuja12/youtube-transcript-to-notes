@@ -296,3 +296,20 @@ export const deleteLibraryEntry = async (courseId) => {
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
+
+export const fetchUserPresets = async () => {
+  const response = await fetch(`${API_BASE_URL}/content/user-presets`, {
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const listDirectories = async (path = '') => {
+  const url = path ? `${API_BASE_URL}/content/list-directories?path=${encodeURIComponent(path)}` : `${API_BASE_URL}/content/list-directories`;
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};

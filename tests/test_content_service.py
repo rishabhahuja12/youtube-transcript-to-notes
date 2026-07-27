@@ -389,3 +389,28 @@ async def test_pdf_export_success(mock_config: str, tmp_course_dir: str) -> None
         
         # Verify page.pdf was called
         mock_page.pdf.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_user_presets_endpoint() -> None:
+    """Verify user presets endpoint returns preset paths."""
+    async with _client() as client:
+        resp = await client.get("/content/user-presets")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Default Output" in data
+    assert "Desktop" in data
+
+
+@pytest.mark.asyncio
+async def test_list_directories_endpoint(tmp_path: str) -> None:
+    """Verify list directories endpoint lists subdirectories correctly."""
+    d = tmp_path / "SubDir"
+    d.mkdir()
+    async with _client() as client:
+        resp = await client.get(f"/content/list-directories?path={tmp_path}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "subdirectories" in data
+    sub_names = [s["name"] for s in data["subdirectories"]]
+    assert "SubDir" in sub_names
