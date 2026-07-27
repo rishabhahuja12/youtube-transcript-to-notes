@@ -302,6 +302,10 @@ export const fetchUserPresets = async () => {
     signal: AbortSignal.timeout(10000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    throw new Error("Invalid response format from server.");
+  }
   return await response.json();
 };
 
@@ -311,5 +315,9 @@ export const listDirectories = async (path = '') => {
     signal: AbortSignal.timeout(15000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  const contentType = response.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    throw new Error("Invalid response format from server.");
+  }
   return await response.json();
 };

@@ -361,14 +361,21 @@ def list_directories(path: Optional[str] = None) -> Dict[str, Any]:
     subdirs = []
     try:
         with os.scandir(target_path) as entries:
-            for entry in sorted(entries, key=lambda e: e.name.lower()):
-                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith('.'):
-                    subdirs.append({
-                        "name": entry.name,
-                        "path": os.path.abspath(entry.path)
-                    })
+            for entry in entries:
+                try:
+                    if entry.name.startswith('$') or entry.name.startswith('.'):
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        subdirs.append({
+                            "name": entry.name,
+                            "path": os.path.abspath(entry.path)
+                        })
+                except (PermissionError, OSError):
+                    continue
     except (PermissionError, OSError) as exc:
         logging.warning(f"Permission error scanning directory {target_path}: {exc}")
+
+    subdirs.sort(key=lambda s: s["name"].lower())
 
     return {
         "current_path": target_path,
