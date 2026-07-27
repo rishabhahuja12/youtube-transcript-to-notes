@@ -27,7 +27,13 @@ def connect_youtube() -> Any:
     """
     secret_path = str(application_root() / 'client_secret.json')
     flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
-    creds = flow.run_local_server(port=0)
+    creds = flow.run_local_server(
+        host='localhost',
+        port=0,
+        authorization_prompt_message='Please complete Google OAuth authorization in your browser.',
+        success_message='Authorization successful! You may close this browser tab.',
+        open_browser=True
+    )
     
     os.makedirs(STUDYSUITE_DIR, exist_ok=True)
     fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)

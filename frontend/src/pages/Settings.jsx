@@ -84,13 +84,19 @@ const Settings = () => {
     }
   };
 
+  const [isConnectingYt, setIsConnectingYt] = useState(false);
+
   const handleConnectYoutube = async () => {
     try {
+      setIsConnectingYt(true);
+      setError(null);
       const res = await connectYouTube();
       setYoutubeConnected(res.connected);
     } catch (err) {
       console.error(err);
-      setError('Failed to connect YouTube.');
+      setError('Failed to connect YouTube: ' + (err.message || 'OAuth prompt cancelled'));
+    } finally {
+      setIsConnectingYt(false);
     }
   };
 
@@ -232,9 +238,17 @@ const Settings = () => {
           </div>
           <div>
             {youtubeConnected ? (
-              <button onClick={handleDisconnectYoutube} className="secondary-button disconnect-button">Disconnect</button>
+              <button onClick={handleDisconnectYoutube} className="secondary-button disconnect-button" disabled={isConnectingYt}>Disconnect</button>
             ) : (
-              <button onClick={handleConnectYoutube} className="primary-button">Connect your YouTube</button>
+              <button onClick={handleConnectYoutube} className="primary-button" disabled={isConnectingYt} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {isConnectingYt ? (
+                  <>
+                    <RefreshCw size={16} className="loader-spin" /> Opening Google Login...
+                  </>
+                ) : (
+                  'Connect your YouTube'
+                )}
+              </button>
             )}
           </div>
         </div>
