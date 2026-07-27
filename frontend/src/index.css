@@ -817,6 +817,30 @@ p {
   background: transparent;
 }
 
+.course-card-delete-btn {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  background: rgba(18, 21, 27, 0.85);
+  border: 1px solid var(--hairline);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  z-index: 2;
+}
+
+.course-card-delete-btn:hover {
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+}
+
 .course-card-content {
   padding: var(--space-lg);
   display: flex;

@@ -287,3 +287,12 @@ export const deleteCourseFile = async (id, filename) => {
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
   return await response.json();
 };
+
+export const deleteLibraryEntry = async (courseId) => {
+  const response = await fetch(`${API_BASE_URL}/api/content/library/${courseId}`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};

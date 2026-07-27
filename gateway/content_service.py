@@ -31,6 +31,7 @@ from src.library import (
     _with_library_lock,
     load_library_entries as _load_library_entries,
     add_library_entry as _add_library_entry,
+    remove_library_entry as _remove_library_entry,
     resolve_course_dir as _resolve_course_dir,
     detect_badges as _detect_badges,
 )
@@ -254,6 +255,15 @@ async def add_library_entry(req: LibraryAddRequest) -> Dict[str, Any]:
     
     entry = _add_library_entry(entry_data)
     return entry
+
+
+@app.delete("/content/library/{course_id}")
+async def delete_library_entry(course_id: str) -> Dict[str, bool]:
+    """Remove a course from the library."""
+    success = _remove_library_entry(course_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Course not found.")
+    return {"success": True}
 
 @app.get("/content/browse-directory")
 def browse_directory(path: Optional[str] = None) -> Dict[str, str]:

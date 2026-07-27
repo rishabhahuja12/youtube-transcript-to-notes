@@ -1,7 +1,7 @@
 import React from 'react';
-import { Play, Eye, Share2, FileText } from 'lucide-react';
+import { Play, Eye, Share2, FileText, Trash2 } from 'lucide-react';
 
-const CourseCard = ({ course, isRecent, onClick }) => {
+const CourseCard = ({ course, isRecent, onClick, onDelete }) => {
   const { title, path, date, badges = {}, duration = "42:10" } = course;
   
   return (
@@ -20,6 +20,19 @@ const CourseCard = ({ course, isRecent, onClick }) => {
           <Play size={20} fill="currentColor" />
         </div>
         <div className="duration-badge mono-text">{duration}</div>
+        {onDelete && (
+          <button 
+            type="button" 
+            className="course-card-delete-btn" 
+            title={`Delete ${title || 'course'}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(course);
+            }}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
       </div>
       
       <div className="course-card-content">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import CourseCard from '../components/CourseCard';
-import { fetchLibrary } from '../utils/api';
+import { fetchLibrary, deleteLibraryEntry } from '../utils/api';
 import { useAppContext } from '../context/AppContext';
 import { RefreshCw, BookOpen, Plus, Search, Filter } from 'lucide-react';
 
@@ -31,6 +31,17 @@ const Library = () => {
   const handleCourseClick = (course) => {
     setActiveCourseDir({ ...course });
     setCurrentScreen('courseWorkspace');
+  };
+
+  const handleDeleteCourse = async (course) => {
+    if (!window.confirm(`Are you sure you want to remove "${course.title || 'this course'}" from your library?`)) return;
+    try {
+      await deleteLibraryEntry(course.id);
+      await loadLibrary();
+    } catch (err) {
+      console.error("Failed to delete course:", err);
+      alert(err.message || "Failed to remove course from library.");
+    }
   };
 
   const goToNewPipeline = () => {
@@ -123,7 +134,8 @@ const Library = () => {
                <CourseCard 
                  course={course} 
                  isRecent={index === 0 && sortBy === 'date' && searchQuery === ''}
-                 onClick={() => handleCourseClick(course)} 
+                 onClick={() => handleCourseClick(course)}
+                 onDelete={(c) => handleDeleteCourse(c)}
                />
                <span className={`status-badge-overlay ${course.status}`}>
                   {course.status || 'complete'}

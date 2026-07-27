@@ -138,6 +138,42 @@ def add_library_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
     return entry_data
 
 
+def remove_library_entry(course_id: str) -> bool:
+    """Remove a course entry from the library configuration.
+
+    Args:
+        course_id: Unique course ID string.
+
+    Returns:
+        bool: True if removed successfully, False if not found.
+    """
+    data = {}
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    entries = data.get("library", [])
+    initial_len = len(entries)
+    entries = [e for e in entries if str(e.get("id")) != str(course_id)]
+
+    if len(entries) == initial_len:
+        return False
+
+    data["library"] = entries
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        os.replace(tmp_path, CONFIG_PATH)
+        return True
+    except OSError as e:
+        logging.error(f"Error removing library entry: {e}")
+        return False
+
+
 def resolve_course_dir(course_id: str) -> str:
     """Resolve a course ID to a validated directory path.
 
