@@ -60,12 +60,50 @@ const NewPipeline = () => {
     fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
   }, []);
 
+  const dirInputRef = useRef(null);
+
   const handleBrowseDir = async () => {
+    // 1. PyWebView Desktop Native Dialog
+    if (window.pywebview && window.pywebview.api && window.pywebview.api.select_folder) {
+      try {
+        const folder = await window.pywebview.api.select_folder();
+        if (folder) {
+          setOutputDir(folder);
+          return;
+        }
+      } catch (e) {
+        console.error("PyWebView folder selection failed:", e);
+      }
+    }
+
+    // 2. Modern Web Directory Picker API
+    if (window.showDirectoryPicker) {
+      try {
+        const handle = await window.showDirectoryPicker();
+        if (handle) {
+          setOutputDir(handle.name);
+          return;
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.warn("showDirectoryPicker failed:", err);
+      }
+    }
+
+    // 3. Backend Endpoint Fallback
     try {
       const data = await browseDirectory();
-      if (data && data.path) setOutputDir(data.path);
+      if (data && data.path && !data.path.endsWith('\\output') && !data.path.endsWith('/output')) {
+        setOutputDir(data.path);
+        return;
+      }
     } catch (err) {
       console.error('Browse failed:', err);
+    }
+
+    // 4. HTML5 Directory Picker Fallback
+    if (dirInputRef.current) {
+      dirInputRef.current.click();
     }
   };
   
@@ -278,6 +316,22 @@ const NewPipeline = () => {
                >
                  <Folder size={18} /> Browse
                </button>
+               <input 
+                 type="file" 
+                 ref={dirInputRef}
+                 style={{ display: 'none' }}
+                 webkitdirectory="true"
+                 directory="true"
+                 onChange={(e) => {
+                   if (e.target.files && e.target.files.length > 0) {
+                     const firstFile = e.target.files[0];
+                     const relPath = firstFile.webkitRelativePath || '';
+                     const folderName = relPath.split('/')[0] || firstFile.name;
+                     const fullPath = firstFile.path ? firstFile.path.substring(0, firstFile.path.lastIndexOf(firstFile.name) - 1) : folderName;
+                     setOutputDir(fullPath);
+                   }
+                 }}
+               />
              </div>
           </div>
 

@@ -82,6 +82,23 @@ def start_services() -> list:
     
     return processes
 
+class PyWebViewApi:
+    """JS bridge API for desktop file and folder dialogs."""
+    def select_folder(self) -> str:
+        if len(webview.windows) > 0:
+            res = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+            if res and len(res) > 0:
+                return res[0]
+        return ""
+
+    def select_file(self) -> str:
+        if len(webview.windows) > 0:
+            res = webview.windows[0].create_file_dialog(webview.OPEN_DIALOG)
+            if res and len(res) > 0:
+                return res[0]
+        return ""
+
+
 def main() -> None:
     """Launch the yt_transcriptor application.
     
@@ -102,7 +119,8 @@ def main() -> None:
                 time.sleep(1)
         else:
             time.sleep(2)
-            webview.create_window("YT Transcriptor - AI Study Suite", "http://localhost:8000", width=1200, height=800, min_size=(800, 600))
+            api = PyWebViewApi()
+            webview.create_window("YT Transcriptor - AI Study Suite", "http://localhost:8000", js_api=api, width=1200, height=800, min_size=(800, 600))
             webview.start(private_mode=True)
     except KeyboardInterrupt:
         pass
