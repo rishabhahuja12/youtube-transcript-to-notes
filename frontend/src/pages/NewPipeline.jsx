@@ -76,32 +76,7 @@ const NewPipeline = () => {
       }
     }
 
-    // 2. Modern Web Directory Picker API
-    if (window.showDirectoryPicker) {
-      try {
-        const handle = await window.showDirectoryPicker();
-        if (handle) {
-          setOutputDir(handle.name);
-          return;
-        }
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-        console.warn("showDirectoryPicker failed:", err);
-      }
-    }
-
-    // 3. Backend Endpoint Fallback
-    try {
-      const data = await browseDirectory();
-      if (data && data.path && !data.path.endsWith('\\output') && !data.path.endsWith('/output')) {
-        setOutputDir(data.path);
-        return;
-      }
-    } catch (err) {
-      console.error('Browse failed:', err);
-    }
-
-    // 4. HTML5 Directory Picker Fallback
+    // 2. Trigger HTML5 Directory Picker (opens File Explorer cleanly without system files block)
     if (dirInputRef.current) {
       dirInputRef.current.click();
     }
