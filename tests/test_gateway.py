@@ -26,7 +26,7 @@ async def test_gateway_routing(monkeypatch):
         if "8003/content/library" in url:
             return MockResponse(b'{"library": []}', 200)
         elif "8003/settings/pool" in url:
-            return MockResponse(b'{"settings": {}}', 200)
+            return MockResponse(b'{"success": true}', 200)
         elif "8003/pdf/export" in url:
             return MockResponse(b'{"pdf": "done"}', 200)
         elif "8002/chat/send" in url:
@@ -44,10 +44,13 @@ async def test_gateway_routing(monkeypatch):
     assert resp.status_code == 200
     assert resp.json() == {"library": []}
     
-    # Test Settings
+    # Test Settings GET and PATCH limits
     resp = client.get("/api/settings/pool")
     assert resp.status_code == 200
-    assert resp.json() == {"settings": {}}
+    
+    resp = client.patch("/api/settings/pool/0/limits", json={"rpm_limit": 30, "tpm_limit": 12000})
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True}
     
     # Test PDF
     resp = client.post("/api/pdf/export")
@@ -86,8 +89,9 @@ async def test_websocket_proxy():
     mock_ws.recv = MagicMock(side_effect=ConnectionClosed(None, None))
     mock_ws.__aenter__.return_value = mock_ws
     
-    with patch("websockets.connect", return_value=mock_ws):
-        with client.websocket_connect("/api/pipeline/stream") as websocket:
+    with patch("websockets.connect", return_value=mock_ws) as connect:
+        with client.websocket_connect("/api/pipeline/stream/job_test") as websocket:
             websocket.send_text("test")
             # The background task will catch ConnectionClosed and finish
             pass
+        connect.assert_called_once_with("ws://localhost:8001/pipeline/stream/job_test")

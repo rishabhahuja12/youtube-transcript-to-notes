@@ -1,3 +1,9 @@
+"""
+Main API Gateway Reverse Proxy for YT-Transcriptor.
+
+Runs on Port 8000. Routes API calls to background microservices
+(8001 pipeline, 8002 chat, 8003 content) and serves built React static frontend assets.
+"""
 import asyncio
 import httpx
 import logging
@@ -9,11 +15,23 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 import websockets
 from websockets.exceptions import ConnectionClosed
+from runtime import application_root
+
+from contextlib import asynccontextmanager
+
+client = httpx.AsyncClient(timeout=300.0)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan resources."""
+    yield
+    await client.aclose()
 
 app = FastAPI(
     title="API Gateway", 
     description="Reverse Proxy for yt_transcriptor services", 
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Crucial CORS setup
@@ -29,13 +47,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-client = httpx.AsyncClient(timeout=300.0)
-
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    """Close the httpx AsyncClient on shutdown."""
-    await client.aclose()
 
 async def proxy_request(request: Request, target_url: str) -> Response:
     """Forward an HTTP request to the designated target microservice URL."""
@@ -65,33 +76,45 @@ async def proxy_request(request: Request, target_url: str) -> Response:
 
 @app.api_route("/api/content/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_content(request: Request, path: str) -> Response:
+    """Proxy requests to Content Service (Port 8003)."""
     return await proxy_request(request, f"http://localhost:8003/content/{path}")
 
-@app.api_route("/api/settings/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@app.api_route("/api/settings/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def route_settings(request: Request, path: str) -> Response:
+    """Proxy requests to Settings Service (Port 8003)."""
     return await proxy_request(request, f"http://localhost:8003/settings/{path}")
     
 @app.api_route("/api/pdf/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_pdf(request: Request, path: str) -> Response:
+    """Proxy requests to PDF Service (Port 8003)."""
     return await proxy_request(request, f"http://localhost:8003/pdf/{path}")
 
 @app.api_route("/api/chat/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_chat(request: Request, path: str) -> Response:
+    """Proxy requests to Chat Service (Port 8002)."""
     return await proxy_request(request, f"http://localhost:8002/chat/{path}")
 
 @app.api_route("/api/pipeline/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_pipeline(request: Request, path: str) -> Response:
+    """Proxy requests to Pipeline Service (Port 8001)."""
     return await proxy_request(request, f"http://localhost:8001/pipeline/{path}")
 
 @app.api_route("/static/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def route_static(request: Request, path: str) -> Response:
+    """Proxy static file requests to Content Service (Port 8003)."""
     return await proxy_request(request, f"http://localhost:8003/static/{path}")
 
-@app.websocket("/api/pipeline/stream")
-async def websocket_pipeline(websocket: WebSocket) -> None:
+@app.api_route("/api/static/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def route_api_static(request: Request, path: str) -> Response:
+    """Proxy static file requests with /api prefix to Content Service (Port 8003)."""
+    return await proxy_request(request, f"http://localhost:8003/static/{path}")
+
+@app.websocket("/api/pipeline/stream/{job_id}")
+async def websocket_pipeline(websocket: WebSocket, job_id: str) -> None:
+    """Proxy WebSocket streaming for pipeline job logs to Pipeline Service (Port 8001)."""
     await websocket.accept()
     try:
-        async with websockets.connect("ws://localhost:8001/pipeline/stream") as target_ws:
+        async with websockets.connect(f"ws://localhost:8001/pipeline/stream/{job_id}") as target_ws:
             async def forward_to_client():
                 try:
                     while True:
@@ -123,8 +146,7 @@ async def websocket_pipeline(websocket: WebSocket) -> None:
         await websocket.close(code=1011, reason=str(e))
 
 # Mount React static files in production
-_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRONTEND_DIST = os.path.join(_BASE, "frontend", "dist")
+FRONTEND_DIST = str(application_root() / "frontend" / "dist")
 
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")

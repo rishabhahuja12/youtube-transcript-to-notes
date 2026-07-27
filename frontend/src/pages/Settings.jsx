@@ -1,7 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey, fetchYouTubeStatus, connectYouTube, disconnectYouTube } from '../utils/api';
-import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, PlayCircle } from 'lucide-react';
+import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey, updateProviderLimits, fetchYouTubeStatus, connectYouTube, disconnectYouTube } from '../utils/api';
+import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, PlayCircle, Sliders, Check, X, RotateCcw, Zap } from 'lucide-react';
+import HealthCard from '../components/HealthCard';
 import './Settings.css';
+
+const PROVIDER_ENDPOINTS = {
+  groq: 'https://api.groq.com/openai/v1',
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  openrouter: 'https://openrouter.ai/api/v1',
+  ollama: 'http://localhost:11434/v1'
+};
+
+const RECOMMENDED_LIMITS = {
+  groq: { rpm_limit: 30, tpm_limit: 12000 },
+  gemini: { rpm_limit: 15, tpm_limit: 1000000 },
+  openrouter: { rpm_limit: 18, tpm_limit: 50000 },
+  ollama: { rpm_limit: 9999, tpm_limit: 999999 }
+};
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState('text');
@@ -10,32 +25,57 @@ const Settings = () => {
   const [youtubeConnected, setYoutubeConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [editingLimits, setEditingLimits] = useState(null);
 
   const [newKey, setNewKey] = useState({
     provider: 'groq',
     api_key: '',
-    endpoint_url: '',
+    endpoint_url: PROVIDER_ENDPOINTS.groq,
     model_name: '',
-    capability: 'text'
+    capability: 'text',
+    ...RECOMMENDED_LIMITS.groq
   });
 
   useEffect(() => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshOllamaStatus = async () => {
+      try {
+        const data = await fetchOllamaStatus();
+        if (mounted) {
+          setHealthStatus(prev => ({ ...prev, ollama: data.ollama === true }));
+        }
+      } catch (err) {
+        if (mounted) {
+          setHealthStatus(prev => ({ ...prev, ollama: false }));
+        }
+      }
+    };
+
+    const interval = setInterval(refreshOllamaStatus, 15000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const loadData = async () => {
     try {
       setLoading(true);
-      const [healthData, ytData, poolData] = await Promise.all([
-        fetchOllamaStatus().catch(err => { console.error(err); return healthStatus; }),
+      const [ytData, poolData] = await Promise.all([
         fetchYouTubeStatus().catch(err => { console.error(err); return { connected: false }; }),
         fetchPoolSettings()
       ]);
 
-      setHealthStatus(healthData);
       setYoutubeConnected(ytData.connected);
       setPoolConfigs(poolData);
       setError(null);
+      setLoading(false);
+      fetchOllamaStatus().then(setHealthStatus).catch(err => console.error(err));
     } catch (err) {
       console.error(err);
       setError('Failed to load settings data.');
@@ -67,11 +107,8 @@ const Settings = () => {
   
   const handleProviderChange = (e) => {
     const provider = e.target.value;
-    let endpoint_url = '';
-    if (provider === 'groq') endpoint_url = 'https://api.groq.com/openai/v1';
-    if (provider === 'gemini') endpoint_url = 'https://generativelanguage.googleapis.com/v1beta/openai/';
-    if (provider === 'ollama') endpoint_url = 'http://localhost:11434/v1';
-    setNewKey({...newKey, provider, endpoint_url});
+    const endpoint_url = PROVIDER_ENDPOINTS[provider] || '';
+    setNewKey({...newKey, provider, endpoint_url, ...RECOMMENDED_LIMITS[provider]});
   };
 
   const handleAddKey = async (e) => {
@@ -90,7 +127,7 @@ const Settings = () => {
     try {
       const res = await addPoolKey(newKey);
       if (res && res.success) {
-        setNewKey({ provider: 'groq', api_key: '', endpoint_url: '', model_name: '', capability: activeTab });
+        setNewKey({ provider: 'groq', api_key: '', endpoint_url: PROVIDER_ENDPOINTS.groq, model_name: '', capability: activeTab, ...RECOMMENDED_LIMITS.groq });
         await loadData();
       } else {
         setError(res?.error || 'Keyring storage failed. Could not save provider configuration.');
@@ -111,12 +148,25 @@ const Settings = () => {
     }
   };
 
+  const handleSaveLimits = async (index, limits) => {
+    try {
+      await updateProviderLimits(index, {
+        rpm_limit: Number(limits.rpm_limit),
+        tpm_limit: Number(limits.tpm_limit)
+      });
+      setEditingLimits(null);
+      await loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to update rate limits.');
+    }
+  };
+
   const filteredPool = poolConfigs.filter(cfg => cfg.capability === activeTab);
 
   if (loading) {
     return (
-      <div className="settings-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-        <div style={{ color: 'var(--text-secondary)', fontSize: '1.2rem' }}>Loading settings...</div>
+      <div className="settings-container settings-loading-container">
+        <div className="settings-loading-text">Loading settings...</div>
       </div>
     );
   }
@@ -137,7 +187,7 @@ const Settings = () => {
       {/* Health Cards */}
       <section>
         <h2>
-          <Activity size={24} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+          <Activity size={24} className="header-icon" />
           System Health
         </h2>
         <div className="health-grid">
@@ -164,21 +214,16 @@ const Settings = () => {
 
       <section>
         <h2>
-          <PlayCircle size={24} style={{ marginRight: '8px', verticalAlign: 'middle' }} />
+          <PlayCircle size={24} className="header-icon" />
           YouTube Connection
         </h2>
-        <div className="health-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="health-card youtube-card-row">
           <div>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3 className="health-card-title">
               YouTube API
-              <span style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                background: youtubeConnected ? 'var(--connected)' : '#dc3545' 
-              }}></span>
+              <span className={`status-indicator ${youtubeConnected ? 'online' : 'error'}`}></span>
             </h3>
-            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            <p className="health-card-desc">
               Connect via Google OAuth for reliable metadata and chapters.
             </p>
             <p className={`health-status ${youtubeConnected ? 'success' : 'error'}`}>
@@ -187,7 +232,7 @@ const Settings = () => {
           </div>
           <div>
             {youtubeConnected ? (
-              <button onClick={handleDisconnectYoutube} className="secondary-button" style={{ borderColor: '#dc3545', color: '#dc3545' }}>Disconnect</button>
+              <button onClick={handleDisconnectYoutube} className="secondary-button disconnect-button">Disconnect</button>
             ) : (
               <button onClick={handleConnectYoutube} className="primary-button">Connect your YouTube</button>
             )}
@@ -213,38 +258,157 @@ const Settings = () => {
         </div>
 
         <div className="pool-content">
-          <h3 style={{ marginBottom: '16px' }}>
+          <h3 className="section-subheading">
             {activeTab === 'text' ? 'Text Generation Providers' : 'Vision/Multimodal Providers'}
           </h3>
           
           <div className="key-list">
             {loading && poolConfigs.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)' }}>Loading providers...</p>
+              <p className="muted-text">Loading providers...</p>
             ) : filteredPool.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No {activeTab} providers configured.</p>
+              <p className="muted-text-italic">No {activeTab} providers configured.</p>
             ) : (
-              filteredPool.map((cfg, idx) => (
-                <div key={idx} className="key-item">
-                  <div className="key-info">
-                    <Key size={20} color="var(--accent)" />
-                    <div>
-                      <p className="key-provider">{cfg.provider}</p>
-                      <p className="key-masked">{cfg.masked_key}</p>
-                    </div>
+              filteredPool.map((cfg) => {
+                const realIndex = poolConfigs.indexOf(cfg);
+                const isEditing = editingLimits?.index === realIndex;
+                const recommended = RECOMMENDED_LIMITS[cfg.provider] || { rpm_limit: 30, tpm_limit: 12000 };
+
+                return (
+                  <div key={realIndex} className={`key-item ${isEditing ? 'is-editing' : ''}`}>
+                    {!isEditing ? (
+                      <div className="key-item-normal">
+                        <div className="key-main">
+                          <div className="provider-badge-icon">
+                            <Key size={18} />
+                          </div>
+                          <div className="key-details">
+                            <div className="key-header-line">
+                              <span className="key-provider-title">{cfg.provider}</span>
+                              <span className="key-model-tag">{cfg.model_name}</span>
+                            </div>
+                            <div className="key-sub-line">
+                              <span className="key-masked">{cfg.masked_key}</span>
+                              <span className="key-limit-chip">
+                                <Zap size={12} />
+                                {cfg.rpm_limit || recommended.rpm_limit} RPM · {cfg.tpm_limit || recommended.tpm_limit} TPM
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="key-actions">
+                          <button
+                            type="button"
+                            className="secondary-button edit-limits-button"
+                            onClick={() => setEditingLimits({
+                              index: realIndex,
+                              rpm_limit: cfg.rpm_limit || recommended.rpm_limit,
+                              tpm_limit: cfg.tpm_limit || recommended.tpm_limit
+                            })}
+                            title="Configure RPM & TPM rate limits"
+                          >
+                            <Sliders size={15} />
+                            <span>Edit Limits</span>
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => handleRemoveKey(realIndex)}
+                            className="delete-btn"
+                            title={`Remove ${cfg.provider} provider`}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="key-item-edit-card">
+                        <div className="edit-card-header">
+                          <div className="edit-card-title">
+                            <Sliders size={18} className="edit-title-icon" />
+                            <h4>Configure Limits — <span className="provider-name-accent">{cfg.provider}</span> ({cfg.model_name})</h4>
+                          </div>
+                          <button 
+                            type="button" 
+                            className="icon-cancel-button"
+                            onClick={() => setEditingLimits(null)}
+                            title="Cancel editing"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        <div className="edit-card-grid">
+                          <div className="edit-field-group">
+                            <label className="edit-field-label">
+                              <Activity size={14} /> Requests / Minute (RPM)
+                            </label>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              className="form-input edit-number-input"
+                              value={editingLimits.rpm_limit} 
+                              onChange={e => setEditingLimits({...editingLimits, rpm_limit: e.target.value})} 
+                              placeholder="e.g. 30"
+                            />
+                            <span className="field-hint">Max API calls in 60s sliding window</span>
+                          </div>
+
+                          <div className="edit-field-group">
+                            <label className="edit-field-label">
+                              <Zap size={14} /> Tokens / Minute (TPM)
+                            </label>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              className="form-input edit-number-input"
+                              value={editingLimits.tpm_limit} 
+                              onChange={e => setEditingLimits({...editingLimits, tpm_limit: e.target.value})} 
+                              placeholder="e.g. 12000"
+                            />
+                            <span className="field-hint">Max total tokens processed per minute</span>
+                          </div>
+                        </div>
+
+                        <div className="edit-card-footer">
+                          <button 
+                            type="button" 
+                            className="preset-pill-button"
+                            onClick={() => setEditingLimits({
+                              ...editingLimits,
+                              rpm_limit: recommended.rpm_limit,
+                              tpm_limit: recommended.tpm_limit
+                            })}
+                          >
+                            <RotateCcw size={13} /> Reset to recommended ({recommended.rpm_limit} RPM / {recommended.tpm_limit} TPM)
+                          </button>
+
+                          <div className="edit-footer-actions">
+                            <button 
+                              type="button" 
+                              className="secondary-button"
+                              onClick={() => setEditingLimits(null)}
+                            >
+                              Cancel
+                            </button>
+                            <button 
+                              type="button" 
+                              className="primary-button"
+                              onClick={() => handleSaveLimits(editingLimits.index, editingLimits)}
+                            >
+                              <Check size={16} /> Save Limits
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button 
-                    onClick={() => handleRemoveKey(poolConfigs.indexOf(cfg))}
-                    className="delete-btn"
-                  >
-                    <Trash2 size={20} />
-                  </button>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
           <form onSubmit={handleAddKey} className="add-form">
-            <h4 style={{ marginBottom: '16px' }}>Add New Provider</h4>
+            <h4 className="form-subheading">Add New Provider</h4>
             <div className="form-grid">
               <select 
                 className="form-input"
@@ -268,21 +432,40 @@ const Settings = () => {
               
               <input 
                 type="text" 
-                placeholder="Endpoint URL (Optional)" 
+                placeholder="Endpoint URL" 
                 className="form-input"
                 value={newKey.endpoint_url}
                 onChange={e => setNewKey({...newKey, endpoint_url: e.target.value})}
+                required
               />
+
+              <details className="rate-limit-settings">
+                <summary>Advanced rate limits</summary>
+                <div className="rate-limit-grid">
+                  <label>
+                    RPM limit
+                    <input type="number" min="1" className="form-input" value={newKey.rpm_limit} onChange={e => setNewKey({...newKey, rpm_limit: Number(e.target.value)})} required />
+                  </label>
+                  <label>
+                    TPM limit
+                    <input type="number" min="1" className="form-input" value={newKey.tpm_limit} onChange={e => setNewKey({...newKey, tpm_limit: Number(e.target.value)})} required />
+                  </label>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => setNewKey({...newKey, ...RECOMMENDED_LIMITS[newKey.provider]})}>
+                  Use recommended limits
+                </button>
+              </details>
               
               <input 
                 type="text" 
-                placeholder="Model Name (Optional)" 
+                placeholder="Model Name" 
                 className="form-input"
                 value={newKey.model_name}
                 onChange={e => setNewKey({...newKey, model_name: e.target.value})}
+                required
               />
             </div>
-            <button type="submit" className="primary-button" style={{ width: 'auto' }}>
+            <button type="submit" className="primary-button submit-auto-width">
               <Plus size={18} />
               Add Provider
             </button>
@@ -292,28 +475,5 @@ const Settings = () => {
     </div>
   );
 };
-
-const HealthCard = ({ title, status, icon, desc }) => (
-  <div className="health-card">
-    <div className={`health-icon-wrapper ${status ? 'success' : 'error'}`}>
-      {icon}
-    </div>
-    <div>
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {title}
-        <span style={{ 
-          width: '8px', 
-          height: '8px', 
-          borderRadius: '50%', 
-          background: status ? 'var(--connected)' : '#dc3545' 
-        }}></span>
-      </h3>
-      <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '4px' }}>{desc}</p>
-      <p className={`health-status ${status ? 'success' : 'error'}`}>
-        {status ? 'Online & Ready' : 'Unavailable'}
-      </p>
-    </div>
-  </div>
-);
 
 export default Settings;

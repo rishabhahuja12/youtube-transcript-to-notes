@@ -1,3 +1,6 @@
+"""
+Interactive chat session handler over course notes using local Ollama.
+"""
 import os
 from typing import List, Dict
 from src.llm_client import call_ollama_chat
@@ -5,7 +8,13 @@ from src.llm_client import call_ollama_chat
 class ChatSession:
     """Chat session for local Ollama chat over a folder of markdown notes."""
 
-    def __init__(self, notes_dir: str, ollama_model: str = "llama3"):
+    def __init__(self, notes_dir: str, ollama_model: str = "llama3") -> None:
+        """Initialize ChatSession by indexing all markdown notes in notes_dir.
+
+        Args:
+            notes_dir: Path to directory containing course markdown notes.
+            ollama_model: Name of local Ollama model to use.
+        """
         self.notes_dir = notes_dir
         self.ollama_model = ollama_model
         self.chat_history: List[Dict[str, str]] = []
@@ -56,6 +65,7 @@ class ChatSession:
         
         return response
         
-    def clear_history(self):
+    def clear_history(self) -> None:
         """Clear the chat history."""
         self.chat_history.clear()
+

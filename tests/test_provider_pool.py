@@ -105,3 +105,80 @@ def test_provider_pool_json_capability_default():
     
     assert pool.total == 1
     assert pool.configs[0].capability == "text"
+    assert pool.configs[0].rpm_limit is None
+    assert pool.configs[0].tpm_limit is None
+
+def test_provider_config_rate_limits_validation():
+    config = ProviderConfig(
+        provider="groq",
+        endpoint_url="https://api.groq.com/openai/v1",
+        api_key="k1",
+        model_name="llama-3.3-70b-versatile",
+        rpm_limit=30,
+        tpm_limit=12000
+    )
+    config.validate()
+    assert config.rpm_limit == 30
+    assert config.tpm_limit == 12000
+
+    invalid_rpm = ProviderConfig(
+        provider="groq",
+        endpoint_url="https://api.groq.com/openai/v1",
+        api_key="k1",
+        model_name="m1",
+        rpm_limit=-5
+    )
+    with pytest.raises(ValueError, match="RPM limit must be a positive number"):
+        invalid_rpm.validate()
+
+    invalid_tpm = ProviderConfig(
+        provider="groq",
+        endpoint_url="https://api.groq.com/openai/v1",
+        api_key="k1",
+        model_name="m1",
+        tpm_limit=0
+    )
+    with pytest.raises(ValueError, match="TPM limit must be a positive number"):
+        invalid_tpm.validate()
+
+def test_provider_pool_json_rate_limits_roundtrip():
+    config = ProviderConfig(
+        provider="openrouter",
+        endpoint_url="https://openrouter.ai/api/v1",
+        api_key="k1",
+        model_name="m1",
+        rpm_limit=18,
+        tpm_limit=50000
+    )
+    pool = ProviderPool([config])
+    json_str = pool.to_json()
+    
+    pool_reloaded = ProviderPool.from_json(json_str)
+    assert pool_reloaded.configs[0].rpm_limit == 18
+    assert pool_reloaded.configs[0].tpm_limit == 50000
+
+def test_adaptive_rate_limiter_for_config():
+    from src.llm_client import AdaptiveRateLimiter
+    
+    config_default = ProviderConfig(
+        provider="groq",
+        endpoint_url="https://api.groq.com/openai/v1",
+        api_key="k1",
+        model_name="m1"
+    )
+    limiter_default = AdaptiveRateLimiter.for_config(config_default)
+    assert limiter_default.rpm_limit == 30
+    assert limiter_default.tpm_limit == 12000
+
+    config_custom = ProviderConfig(
+        provider="groq",
+        endpoint_url="https://api.groq.com/openai/v1",
+        api_key="k1",
+        model_name="m1",
+        rpm_limit=60,
+        tpm_limit=25000
+    )
+    limiter_custom = AdaptiveRateLimiter.for_config(config_custom)
+    assert limiter_custom.rpm_limit == 60
+    assert limiter_custom.tpm_limit == 25000
+

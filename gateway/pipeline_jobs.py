@@ -1,3 +1,6 @@
+"""
+In-memory job management and event journaling for pipeline execution telemetry.
+"""
 import asyncio
 import threading
 import time
@@ -9,8 +12,10 @@ from typing import Any, Dict, Optional, Set
 MAX_EVENTS_PER_JOB = 500
 JOB_TTL_SECONDS = 900  # 15 minutes
 
+
 @dataclass
 class PipelineJob:
+    """Dataclass representing an active or completed pipeline job session."""
     job_id: str
     status: str  # "running" | "complete" | "degraded" | "failed" | "cancelled"
     cancel_event: threading.Event = field(default_factory=threading.Event)
@@ -21,13 +26,21 @@ class PipelineJob:
     created_at: float = field(default_factory=time.time)
     terminal_at: Optional[float] = None
 
+
 class PipelineJobManager:
-    def __init__(self):
+    """Thread-safe manager for tracking active pipeline jobs and event streams."""
+
+    def __init__(self) -> None:
+        """Initialize job manager with reentrant lock."""
         self._lock = threading.RLock()
         self._current_job: Optional[PipelineJob] = None
 
     def create_job(self) -> PipelineJob:
-        """Create a new job. Raises RuntimeError if one is already running."""
+        """Create a new job. Raises RuntimeError if one is already running.
+
+        Returns:
+            PipelineJob: Newly created job instance.
+        """
         with self._lock:
             if self._current_job and self._current_job.status == "running":
                 raise RuntimeError("A job is already running")
@@ -40,19 +53,42 @@ class PipelineJobManager:
             return job
 
     def get_job(self, job_id: str) -> Optional[PipelineJob]:
+        """Retrieve a pipeline job by job_id if active.
+
+        Args:
+            job_id: Job identifier string.
+
+        Returns:
+            Optional[PipelineJob]: Matching PipelineJob instance or None.
+        """
         with self._lock:
             if self._current_job and self._current_job.job_id == job_id:
                 return self._current_job
             return None
 
     def record_event(self, job: PipelineJob, event: dict) -> None:
+        """Append a telemetry event dictionary to the job's event journal.
+
+        Args:
+            job: PipelineJob instance.
+            event: Event payload dictionary.
+        """
         with self._lock:
             job.event_journal.append(event)
 
     def finalize_job(self, job: PipelineJob, status: str, result: dict) -> None:
+        """Mark a job as finished with final status and results payload.
+
+        Args:
+            job: PipelineJob instance.
+            status: Final status string.
+            result: Result data dictionary.
+        """
         with self._lock:
             job.status = status
             job.result = result
             job.terminal_at = time.time()
 
+
 job_manager = PipelineJobManager()
+

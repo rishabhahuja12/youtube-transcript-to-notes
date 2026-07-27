@@ -12,13 +12,16 @@ from collections import deque
 import urllib.request
 import urllib.error
 import socket
+from typing import Optional, List, Dict, Any, Callable
 
 APP_VERSION = "2.0.0"
 LLM_TIMEOUT_SECONDS = 180  # Max seconds to wait for a single LLM response
 
+
 class LLMError(Exception):
     """Base class for all LLM errors."""
     pass
+
 
 class RateLimitError(LLMError):
     """HTTP 429 Too Many Requests."""
@@ -40,7 +43,10 @@ class ProviderUnavailableError(LLMError):
 # ─────────────────────── Provider Rate Limit Presets ───────────────────────
 
 PROVIDER_PRESETS = {
-    "groq": {"rpm": 25, "tpm": 5000, "label": "Groq Free (25 RPM, 5K TPM)"},
+    # Defaults match the recommended free-tier quality model:
+    # llama-3.3-70b-versatile (30 RPM, 12K TPM). Other Groq models may have
+    # different limits, so this remains intentionally conservative for them.
+    "groq": {"rpm": 30, "tpm": 12000, "label": "Groq Free (30 RPM, 12K TPM)"},
     "openrouter": {"rpm": 18, "tpm": 50000, "label": "OpenRouter Free (18 RPM)"},
     "gemini": {"rpm": 15, "tpm": 1000000, "label": "Gemini AI Studio (15 RPM)"},
     "ollama": {"rpm": 9999, "tpm": 999999, "label": "Ollama Local (no limits)"},
@@ -79,6 +85,12 @@ class AdaptiveRateLimiter:
         """Create a rate limiter with appropriate limits for a known provider."""
         preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS.get("groq"))
         return cls(rpm=preset["rpm"], tpm=preset["tpm"])
+
+    @classmethod
+    def for_config(cls, config) -> "AdaptiveRateLimiter":
+        """Create a limiter using saved per-configuration overrides when set."""
+        preset = PROVIDER_PRESETS.get(config.provider, PROVIDER_PRESETS["groq"])
+        return cls(rpm=config.rpm_limit or preset["rpm"], tpm=config.tpm_limit or preset["tpm"])
     
     def _clean_old_entries(self):
         """Remove entries older than 60 seconds from the sliding window."""
@@ -178,15 +190,18 @@ class AdaptiveRateLimiter:
                 self.token_log.append((ts, actual_tokens))
 
 
-def get_rate_limit_info(provider: str) -> str:
+def get_rate_limit_info(provider: str, rpm_limit: int | None = None, tpm_limit: int | None = None) -> str:
     """Get a human-readable description of rate limits for a provider."""
     preset = PROVIDER_PRESETS.get(provider)
     if preset:
-        return preset["label"]
+        rpm = rpm_limit or preset["rpm"]
+        tpm = tpm_limit or preset["tpm"]
+        return f"{provider.title()} ({rpm} RPM, {tpm:,} TPM)"
     return f"Unknown provider '{provider}' — using conservative limits"
 
 
-def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str) -> dict:
+def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str,
+                           rpm_limit: int | None = None, tpm_limit: int | None = None) -> dict:
     """Estimate how long the pipeline will take based on provider limits.
     
     Returns dict with:
@@ -197,8 +212,8 @@ def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str) -
         - info: human-readable summary
     """
     preset = PROVIDER_PRESETS.get(provider, PROVIDER_PRESETS.get("groq"))
-    rpm = preset["rpm"]
-    tpm = preset["tpm"]
+    rpm = rpm_limit or preset["rpm"]
+    tpm = tpm_limit or preset["tpm"]
     
     input_tokens = int(total_words * 1.4)
     output_tokens = num_chapters * 800  # ~800 tokens per chapter output
@@ -240,7 +255,15 @@ def estimate_pipeline_time(total_words: int, num_chapters: int, provider: str) -
 
 # ─────────────────────── Core LLM Call ────────────────────────────────────
 
-def call_llm(provider, endpoint_url, api_key, model_name, system_prompt, user_prompt, images=None):
+def call_llm(
+    provider: str,
+    endpoint_url: str,
+    api_key: str,
+    model_name: str,
+    system_prompt: str,
+    user_prompt: str,
+    images: Optional[List[str]] = None,
+) -> str:
     """Make raw POST HTTP call to Ollama or OpenAI compatible endpoint."""
     url = endpoint_url.strip()
     headers = {

@@ -39,11 +39,11 @@ const Library = () => {
 
   const filteredAndSortedCourses = useMemo(() => {
     let result = courses.filter(course => 
-      course.title?.toLowerCase().includes(searchQuery.toLowerCase())
+      (course?.title || course?.id || '').toString().toLowerCase().includes(searchQuery.toLowerCase())
     );
     
     if (sortBy === 'date') {
-      result.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      result.sort((a, b) => (Date.parse(b.created_at || b.date || '') || 0) - (Date.parse(a.created_at || a.date || '') || 0));
     } else if (sortBy === 'status') {
       result.sort((a, b) => (a.status || '').localeCompare(b.status || ''));
     }

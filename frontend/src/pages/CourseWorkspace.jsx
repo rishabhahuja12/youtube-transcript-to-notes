@@ -8,6 +8,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import mermaid from 'mermaid';
 import { ArrowLeft, Send, Download, RefreshCw, FileText, MessageSquare, Share2, File, Image as ImageIcon, Eye } from 'lucide-react';
+import './CourseWorkspace.css';
 
 mermaid.initialize({
   startOnLoad: false,
@@ -31,7 +32,7 @@ const MermaidChart = ({ code }) => {
     }
   }, [code]);
 
-  return <div className="mermaid-container" ref={chartRef} style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: 'var(--space-xl)' }} />;
+  return <div className="mermaid-container" ref={chartRef} />;
 };
 
 const PDF_THEMES = [
@@ -179,16 +180,30 @@ const CourseWorkspace = () => {
     }
   };
 
+  const handlePreviewPdf = () => {
+    const existingPdf = courseFiles.find(f => f.name.toLowerCase().endsWith('.pdf'));
+    const mdFile = courseFiles.find(f => f.name.toLowerCase().endsWith('.md'));
+    const pdfFilename = existingPdf ? existingPdf.name : (mdFile ? mdFile.name.replace(/\.md$/i, '.pdf') : null);
+    if (pdfFilename) {
+      const previewUrl = `${API_BASE_URL}/static/${activeCourseDir.id}/${encodeURIComponent(pdfFilename)}`;
+      window.open(previewUrl, '_blank');
+    }
+  };
+
   const handleGeneratePdf = async () => {
     const mdFile = courseFiles.find(f => f.name.endsWith('.md'));
     if (!mdFile) return;
 
     setPdfGenerating(true);
+    setPdfError(null);
     try {
       const res = await generatePdf(activeCourseDir.id, mdFile.name, selectedTheme);
       setGeneratedPdfPath(res.path);
+      const updatedFiles = await fetchCourse(activeCourseDir.id);
+      setCourseFiles(updatedFiles);
     } catch (error) {
       console.error("Failed to generate PDF:", error);
+      setPdfError(error.message || 'PDF export failed.');
     } finally {
       setPdfGenerating(false);
     }
@@ -243,12 +258,11 @@ const CourseWorkspace = () => {
         {activeTab === 'notes' && (
           <div className="tab-pane notes-pane panel-card">
             {mdFiles.length > 1 && (
-              <div className="notes-selector" style={{ marginBottom: 'var(--space-lg)' }}>
+              <div className="notes-selector">
                 <select 
-                  className="text-input" 
+                  className="text-input notes-select-input" 
                   value={selectedMdFile || ''} 
                   onChange={handleNotesChange}
-                  style={{ width: 'auto', padding: 'var(--space-sm) var(--space-md)' }}
                 >
                   {mdFiles.map(f => (
                     <option key={f.name} value={f.name}>{f.name}</option>
@@ -275,13 +289,12 @@ const CourseWorkspace = () => {
         {activeTab === 'chat' && (
           <div className="tab-pane chat-pane panel-card">
             <div className="chat-header">
-              <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'center' }}>
+              <div className="chat-header-title-wrapper">
                 <h3>Ask Questions</h3>
                 <select 
-                  className="text-input" 
+                  className="text-input model-select-input" 
                   value={selectedModel} 
                   onChange={e => setSelectedModel(e.target.value)}
-                  style={{ width: 'auto', padding: 'var(--space-xs) var(--space-sm)' }}
                 >
                   <option value="llama3">llama3</option>
                   <option value="phi3">phi3</option>
@@ -361,17 +374,17 @@ const CourseWorkspace = () => {
                 ))}
               </div>
               
-              <div className="pdf-actions" style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap', alignItems: 'center' }}>
+              {pdfError && (
+                <div className="status-alert error" style={{ marginBottom: 'var(--space-md)' }}>
+                  {pdfError}
+                </div>
+              )}
+
+              <div className="pdf-actions">
                 <button 
                   className="secondary-button" 
-                  onClick={() => {
-                    const mdFile = courseFiles.find(f => f.name.endsWith('.md'));
-                    if (mdFile) {
-                      const pdfName = mdFile.name.replace('.md', '.pdf');
-                      window.open(`${API_BASE_URL}/static/${activeCourseDir.id}/${encodeURIComponent(pdfName)}`, '_blank');
-                    }
-                  }}
-                  disabled={!generatedPdfPath && !courseFiles.some(f => f.name.endsWith('.pdf'))}
+                  onClick={handlePreviewPdf}
+                  disabled={!generatedPdfPath && !courseFiles.some(f => f.name.toLowerCase().endsWith('.pdf'))}
                 >
                   <Eye size={18} /> Preview PDF
                 </button>
@@ -381,13 +394,13 @@ const CourseWorkspace = () => {
                   disabled={pdfGenerating || !courseFiles.find(f => f.name.endsWith('.md'))}
                 >
                   {pdfGenerating ? (
-                    <><RefreshCw size={18} className="loader-spin" /> Generating...</>
+                    <><RefreshCw size={18} className="loader-spin" /> Generating PDF...</>
                   ) : (
                     <><Download size={18} /> Export PDF</>
                   )}
                 </button>
                 {generatedPdfPath && (
-                  <span className="success-text" style={{ marginLeft: 'var(--space-md)' }}>✓ Saved to {generatedPdfPath}</span>
+                  <span className="success-text">✓ PDF Exported Successfully!</span>
                 )}
               </div>
             </div>

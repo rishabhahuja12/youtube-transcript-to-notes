@@ -7,12 +7,18 @@
   --border-strong: #495163;
   --highlighter: #e8a33d;
   --connected: #4fd1ae;
+  --error: #dc3545;
   --text-primary: #e7e9ee;
   --text-secondary: #8b93a3;
   --text-muted: #5b6272;
+
+  --surface: var(--panel);
+  --border: var(--hairline);
+  --accent: var(--highlighter);
   
   --radius-sm: 8px;
   --radius-md: 12px;
+  --radius: var(--radius-sm);
   
   --font-sans: 'Inter', 'IBM Plex Sans', sans-serif;
   --font-serif: 'Fraunces', 'Source Serif 4', serif;
@@ -204,6 +210,7 @@ p {
 .status-indicator.online { background: var(--connected); }
 .status-indicator.offline { background: var(--text-muted); }
 .status-indicator.loading { background: var(--highlighter); }
+.status-indicator.error { background: var(--error); }
 
 /* Footer Dock */
 .footer-dock {
@@ -1326,6 +1333,12 @@ p {
   width: 100%;
   height: 100%;
   color: var(--text-muted);
+}
+.play-placeholder.visible {
+  display: flex;
+}
+.cancel-pipeline-button {
+  margin-right: var(--space-lg);
 }
 .status-panel {
   margin-bottom: 20px;

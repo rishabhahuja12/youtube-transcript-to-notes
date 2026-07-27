@@ -13,15 +13,45 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from src.library import resolve_course_dir
+
 # -- Path resolution --------------------------------------------------------
 
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
 
-# -- Global state -----------------------------------------------------------
+# -- Session Manager --------------------------------------------------------
 
-_chat_session: Optional[Any] = None  # Lazily created ChatSession
-_chat_lock = threading.Lock()
+
+class ChatSessionManager:
+    """Thread-safe session manager for maintaining chat sessions per course directory and model."""
+
+    def __init__(self) -> None:
+        self._sessions: Dict[str, Any] = {}
+        self._lock = threading.Lock()
+
+    def get_session(self, course_dir: str, model: str) -> Any:
+        """Retrieve or create a ChatSession instance for a given course directory and model."""
+        session_key = f"{course_dir}::{model}"
+        with self._lock:
+            if SCRIPT_DIR not in sys.path:
+                sys.path.append(SCRIPT_DIR)
+            from src.chat import ChatSession
+
+            if session_key not in self._sessions:
+                self._sessions[session_key] = ChatSession(course_dir, model)
+            return self._sessions[session_key]
+
+    def clear(self) -> None:
+        """Clear all active chat session histories."""
+        with self._lock:
+            for session in self._sessions.values():
+                if hasattr(session, "clear_history"):
+                    session.clear_history()
+            self._sessions.clear()
+
+
+session_manager = ChatSessionManager()
 
 # -- FastAPI app ------------------------------------------------------------
 
@@ -45,8 +75,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-from gateway.content_service import _resolve_course_dir
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Pydantic Models
@@ -77,52 +105,33 @@ async def chat_send(req: ChatRequest) -> Dict[str, str]:
     Returns:
         Dict[str, str]: AI response message.
     """
-    global _chat_session
+    course_dir = resolve_course_dir(req.course_id)
+    session = session_manager.get_session(course_dir, req.model)
 
-    course_dir = _resolve_course_dir(req.course_id)
-
-    with _chat_lock:
-        if SCRIPT_DIR not in sys.path:
-            sys.path.append(SCRIPT_DIR)
-        from src.chat import ChatSession
-
-        # -- Create new session if needed
-        if (
-            _chat_session is None
-            or getattr(_chat_session, "notes_dir", None) != course_dir
-            or getattr(_chat_session, "ollama_model", None) != req.model
-        ):
-            _chat_session = ChatSession(
-                course_dir, req.model
-            )
-
-        try:
-            response = _chat_session.send(req.message)
-            return {"response": response}
-        except ConnectionError as exc:
-            logging.error(f"Connection error in chat: {exc}")
-            raise HTTPException(
-                status_code=503,
-                detail=str(exc),
-            ) from exc
-        except Exception as exc:
-            logging.error(f"Chat error: {exc}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Chat error: {exc}",
-            ) from exc
+    try:
+        response = session.send(req.message)
+        return {"response": response}
+    except ConnectionError as exc:
+        logging.error(f"Connection error in chat: {exc}")
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logging.error(f"Chat error: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat error: {exc}",
+        ) from exc
 
 
 @app.post("/chat/clear")
 async def chat_clear() -> Dict[str, bool]:
-    """Clear the active chat session.
+    """Clear the active chat sessions.
     
     Returns:
         Dict[str, bool]: Success status.
     """
-    global _chat_session
-    with _chat_lock:
-        if _chat_session is not None:
-            _chat_session.clear_history()
-        _chat_session = None
+    session_manager.clear()
     return {"success": True}
+

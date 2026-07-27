@@ -3,6 +3,7 @@ Parsing and segmentation utilities for YouTube transcripts and chapter outlines.
 """
 import re
 from difflib import SequenceMatcher
+from typing import Any, Dict, List, Tuple, Union
 
 # Parser Regular Expressions
 TIME_RE = r"(?:\d{1,2}(?::\d{2}){1,2}|\d{5,6})"
@@ -29,7 +30,7 @@ TIMESTAMP_LINE_RE = re.compile(
 )
 
 
-def normalize_timestamp_str(t_str):
+def normalize_timestamp_str(t_str: str) -> str:
     """Normalize timestamp string into H:MM:SS or HH:MM:SS format."""
     t_str = t_str.strip()
     if t_str.isdigit():
@@ -60,7 +61,8 @@ def normalize_timestamp_str(t_str):
         return f"{int(parts[0])}:{int(parts[1]):02d}:{int(parts[2]):02d}"
     return t_str
 
-def parse_time_str(t):
+
+def parse_time_str(t: str) -> int:
     """Convert H:MM:SS or HH:MM:SS format to absolute seconds."""
     parts = [int(p) for p in t.strip().split(":")]
     while len(parts) < 3:
@@ -68,7 +70,8 @@ def parse_time_str(t):
     h, m, s = parts[-3:]
     return h * 3600 + m * 60 + s
 
-def reflow_blob_to_lines(text):
+
+def reflow_blob_to_lines(text: str) -> str:
     """Add line breaks to flattened/single-line outlines for correct parsing."""
     if text.count("\n") >= 3:
         return text
@@ -76,21 +79,23 @@ def reflow_blob_to_lines(text):
     text = re.sub(rf"(?=(?:{EMOJI_RE.pattern})+\s*[A-Za-z#])", "\n", text)
     return text
 
-def clean_title(title):
+
+def clean_title(title: str) -> str:
     """Clean markdown links, emojis, and symbols from chapter titles."""
     title = title.strip(" -–—:\t")
     title = EMOJI_RE.sub("", title).strip()
     return title
 
-def parse_outline_text(text):
+
+def parse_outline_text(text: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Parse raw outline into normalized chapter information."""
     text = reflow_blob_to_lines(text)
     lines = [l.strip() for l in text.splitlines()]
     lines = [l for l in lines if l]
 
-    chapters = []
+    chapters: List[Dict[str, Any]] = []
     current_section = ""
-    warnings = []
+    warnings: List[str] = []
 
     for line in lines:
         m = LINK_LINE_RE.search(line)
@@ -109,7 +114,7 @@ def parse_outline_text(text):
             if candidate and len(candidate) < 80 and not any(x in candidate.lower() for x in ["course outline", "table of contents", "timestamps"]):
                 current_section = candidate
 
-    chapters.sort(key=lambda c: parse_time_str(c["time"]))
+    chapters.sort(key=lambda c: parse_time_str(str(c["time"])))
 
     if len(chapters) < 2:
         warnings.append("Fewer than 2 chapters detected; the format might not have been recognized.")
@@ -122,12 +127,15 @@ def parse_outline_text(text):
 
     return chapters, warnings
 
-def hms_to_seconds(h, m, s):
+
+def hms_to_seconds(h: Union[str, int], m: Union[str, int], s: Union[str, int]) -> int:
+    """Convert hours, minutes, and seconds strings or ints to total seconds."""
     return int(h) * 3600 + int(m) * 60 + int(s)
 
-def parse_transcript_text(text):
+
+def parse_transcript_text(text: str) -> List[Tuple[int, int, str]]:
     """Parse raw timestamped transcript into blocks of (start_sec, end_sec, text)."""
-    blocks = []
+    blocks: List[Tuple[int, int, str]] = []
     lines = text.splitlines()
 
     i = 0
@@ -151,12 +159,13 @@ def parse_transcript_text(text):
             i += 1
     return blocks
 
-def dedupe_merge(blocks):
+
+def dedupe_merge(blocks: List[Tuple[int, int, str]]) -> List[Tuple[int, str]]:
     """Merge overlapping caption windows using SequenceMatcher sequence comparison."""
     if not blocks:
         return []
 
-    merged = []
+    merged: List[Tuple[int, str]] = []
     accumulated_words = blocks[0][2].split()
     merged.append((blocks[0][0], blocks[0][2]))
 
@@ -181,10 +190,11 @@ def dedupe_merge(blocks):
 
     return merged
 
-def assign_chapters(merged, chapters):
+
+def assign_chapters(merged: List[Tuple[int, str]], chapters: List[Dict[str, Any]]) -> Dict[int, List[str]]:
     """Assign merged transcript chunks to chapters according to timestamps."""
     chapter_starts = [c["time_sec"] for c in chapters]
-    result = {i: [] for i in range(len(chapters))}
+    result: Dict[int, List[str]] = {i: [] for i in range(len(chapters))}
 
     for start_sec, text_chunk in merged:
         idx = 0
@@ -196,3 +206,4 @@ def assign_chapters(merged, chapters):
         result[idx].append(text_chunk)
 
     return result
+

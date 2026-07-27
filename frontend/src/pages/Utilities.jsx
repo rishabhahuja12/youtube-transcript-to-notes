@@ -79,15 +79,14 @@ const Utilities = () => {
         <div className="utility-body">
           <div>
             <label className="form-label">Absolute File Path (.md)</label>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="utilities-file-input-group">
               <input 
                 type="text" 
-                className="form-input"
+                className="form-input utilities-flex-input"
                 placeholder="C:\Users\Username\Documents\notes.md"
                 value={pdfPath}
                 onChange={(e) => setPdfPath(e.target.value)}
                 readOnly
-                style={{ flex: 1 }}
               />
               <button 
                 className="secondary-button"
@@ -121,7 +120,7 @@ const Utilities = () => {
             </div>
           </div>
           
-          <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '8px' }}>
+          <div className="utilities-button-row">
             <button 
               onClick={handleExport}
               disabled={isExporting || !pdfPath}

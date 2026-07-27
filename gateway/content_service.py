@@ -11,7 +11,7 @@ import urllib.request
 import uuid
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import platform
 from datetime import datetime
 
@@ -24,7 +24,21 @@ from pydantic import BaseModel
 # -- Path resolution --------------------------------------------------------
 
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(SCRIPT_DIR, "config.json")
+
+from src.library import (
+    CONFIG_PATH,
+    CourseBadges,
+    _with_library_lock,
+    load_library_entries as _load_library_entries,
+    add_library_entry as _add_library_entry,
+    resolve_course_dir as _resolve_course_dir,
+    detect_badges as _detect_badges,
+)
+from src.pdf import (
+    convert_md_to_pdf as _convert_md_to_pdf,
+    get_shared_pdf_css as _get_shared_pdf_css,
+)
+
 
 # -- FastAPI app ------------------------------------------------------------
 
@@ -71,13 +85,6 @@ class PoolStoreRequest(BaseModel):
     pool: list
 
 
-class CourseBadges(BaseModel):
-    """Feature badges for a course."""
-    vision: bool = False
-    kag: bool = False
-    pdf: bool = False
-
-
 class CourseInfo(BaseModel):
     """Summary info for a single course in the library."""
     id: str
@@ -116,118 +123,11 @@ class HealthStatus(BaseModel):
 
 
 def resolve_within_root(root: Path, user_path: str) -> Path:
+    """Resolve and validate user path to stay relative to root directory."""
     candidate = (root / str(user_path)).resolve()
     if not candidate.is_relative_to(root.resolve()):
         raise HTTPException(status_code=403, detail="Invalid path.")
     return candidate
-
-def _with_library_lock(func):
-    """Execute a function holding a cross-process lock on config.json.lock"""
-    def wrapper(*args, **kwargs):
-        lock_path = CONFIG_PATH + ".lock"
-        if platform.system() == "Windows":
-            import msvcrt
-            with open(lock_path, "a") as f:
-                msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
-                try:
-                    return func(*args, **kwargs)
-                finally:
-                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-            with open(lock_path, "a") as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                try:
-                    return func(*args, **kwargs)
-                finally:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
-    return wrapper
-
-@_with_library_lock
-def _load_library_entries() -> List[Dict[str, Any]]:
-    """Load the list of library entries, migrating recent_outputs if needed."""
-    if not os.path.exists(CONFIG_PATH):
-        return []
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
-        entries = data.get("library", [])
-        dirty = False
-        
-        # Migrate recent_outputs if they exist
-        if "recent_outputs" in data:
-            for p in data["recent_outputs"]:
-                # Ensure no duplicates by path
-                if not any(e.get("path") == p for e in entries):
-                    entries.append({
-                        "id": f"course_{uuid.uuid4().hex}",
-                        "path": p,
-                        "title": os.path.basename(p) or p,
-                        "status": "complete",
-                        "badges": {"vision": False, "kag": False, "pdf": False},
-                        "created_at": datetime.utcnow().isoformat() + "Z"
-                    })
-            del data["recent_outputs"]
-            data["library"] = entries
-            dirty = True
-            
-        if dirty:
-            fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
-            os.replace(tmp_path, CONFIG_PATH)
-            
-        return entries
-    except (json.JSONDecodeError, OSError):
-        return []
-
-@_with_library_lock
-def _add_library_entry(entry_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Add or update an output directory path in the library."""
-    path = entry_data.get("path")
-    if not path:
-        return {}
-        
-    path = os.path.abspath(path)
-    entry_data["path"] = path
-    
-    data = {}
-    if os.path.exists(CONFIG_PATH):
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
-            
-    entries = data.get("library", [])
-    
-    # Remove existing entry with same path if it exists
-    entries = [e for e in entries if e.get("path") != path]
-    
-    entries.insert(0, entry_data)
-    data["library"] = entries
-    
-    try:
-        fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(CONFIG_PATH), text=True)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
-        os.replace(tmp_path, CONFIG_PATH)
-    except OSError as e:
-        logging.error(f"Error saving library: {e}")
-        
-    return entry_data
-
-def _resolve_course_dir(course_id: str) -> str:
-    """Resolve a course ID to a validated directory path."""
-    entries = _load_library_entries()
-    for entry in entries:
-        if str(entry.get("id")) == str(course_id):
-            course_dir = entry.get("path")
-            if not os.path.isdir(course_dir):
-                raise HTTPException(status_code=404, detail="Course directory does not exist.")
-            return course_dir
-    raise HTTPException(status_code=404, detail=f"Invalid course_id: {course_id}")
 
 
 def _check_ollama() -> bool:
@@ -281,27 +181,6 @@ def _check_keyring() -> bool:
         return False
 
 
-def _detect_badges(course_dir: str) -> CourseBadges:
-    """Detect which features were used for a course.
-
-    Args:
-        course_dir: Path to the course output directory.
-
-    Returns:
-        CourseBadges with vision/kag/pdf flags.
-    """
-    try:
-        files = os.listdir(course_dir)
-    except OSError:
-        return CourseBadges()
-
-    has_vision = any(f.lower().endswith((".jpg", ".png", ".jpeg")) for f in files)
-    has_kag = any("_knowledge_graph" in f.lower() for f in files)
-    has_pdf = any(f.lower().endswith(".pdf") for f in files)
-
-    return CourseBadges(vision=has_vision, kag=has_kag, pdf=has_pdf)
-
-
 def _mask_key(key: str) -> str:
     """Mask an API key for safe display.
 
@@ -316,58 +195,6 @@ def _mask_key(key: str) -> str:
     if len(key) <= 8:
         return "*" * len(key)
     return key[:8] + "..."
-
-
-def _get_shared_pdf_css(theme: str = "Textbook") -> str:
-    """Get CSS rules for Markdown to PDF conversion.
-
-    Args:
-        theme: Visual theme name.
-
-    Returns:
-        Custom CSS styling block string.
-    """
-    base_css = """
-    body {
-        font-family: 'Segoe UI', Helvetica, sans-serif;
-        line-height: 1.5;
-    }
-    h1 { break-before: page; margin-top: 0; }
-    h1:first-of-type { break-before: auto; }
-    h1, h2, h3, h4 { break-after: avoid; }
-    pre, blockquote, table, tr { break-inside: avoid; }
-    table { width: 100%; border-collapse: collapse; margin: 1em 0; }
-    @page { margin: 20mm; }
-    """
-    if theme == "Textbook":
-        return base_css + """
-        body { color: #1f2937; }
-        h1 { color: #1e3a8a; font-size: 24pt; border-bottom: 3px solid #3b82f6; }
-        h2 { color: #2563eb; font-size: 18pt; border-bottom: 1px solid #d1d5db; }
-        pre { background-color: #f8fafc; padding: 12px; border-left: 4px solid #94a3b8; }
-        blockquote { border-left: 4px solid #3b82f6; background-color: #eff6ff; padding: 10px; }
-        th { background-color: #e2e8f0; padding: 8px; border: 1px solid #cbd5e1; }
-        td { padding: 8px; border: 1px solid #cbd5e1; }
-        """
-    elif theme == "ChatGPT Dark":
-        return base_css + """
-        @page { margin: 0; }
-        body { color: #ececf1; background-color: #212121; padding: 20mm; }
-        h1 { color: #ffffff; font-size: 24pt; border-bottom: 1px solid #4d4d4d; }
-        h2 { color: #f9f9f9; font-size: 18pt; border-bottom: 1px solid #3d3d3d; }
-        pre { background-color: #0d0d0d; padding: 12px; border-left: 4px solid #10a37f; }
-        blockquote { border-left: 4px solid #10a37f; background-color: #2f2f2f; padding: 10px; }
-        th { background-color: #2f2f2f; padding: 8px; border: 1px solid #4d4d4d; color: #fff; }
-        td { padding: 8px; border: 1px solid #4d4d4d; }
-        """
-    else:  # Minimal Mono
-        return base_css + """
-        body { font-family: 'Courier New', Courier, monospace; color: #000; }
-        h1, h2, h3 { color: #000; text-transform: uppercase; border-bottom: 1px solid #000; }
-        pre { background-color: #fff; padding: 12px; border: 1px solid #000; }
-        blockquote { border-left: 4px solid #000; padding: 10px; }
-        th, td { border: 1px solid #000; padding: 8px; }
-        """
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Library Endpoints
@@ -429,34 +256,22 @@ async def add_library_entry(req: LibraryAddRequest) -> Dict[str, Any]:
     return entry
 
 @app.get("/content/browse-directory")
-def browse_directory() -> Dict[str, str]:
-    """Open a native file dialog to pick a directory."""
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    
-    directory = filedialog.askdirectory(title="Select Output Directory")
-    root.destroy()
-    
-    return {"path": directory}
+def browse_directory(path: Optional[str] = None) -> Dict[str, str]:
+    """Return a safe headless path handler for output directory selection."""
+    if path and os.path.exists(path):
+        resolved = os.path.abspath(path)
+    else:
+        resolved = os.path.abspath(os.path.join(SCRIPT_DIR, "output"))
+    return {"path": resolved}
 
 @app.get("/content/browse-file")
-def browse_file() -> Dict[str, str]:
-    """Open a native file dialog to pick a file."""
-    import tkinter as tk
-    from tkinter import filedialog
-    
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes('-topmost', True)
-    
-    file_path = filedialog.askopenfilename(title="Select File")
-    root.destroy()
-    
-    return {"path": file_path}
+def browse_file(path: Optional[str] = None) -> Dict[str, str]:
+    """Return a safe headless path handler for file selection."""
+    if path and os.path.isfile(path):
+        resolved = os.path.abspath(path)
+    else:
+        resolved = ""
+    return {"path": resolved}
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Course Endpoints
@@ -614,11 +429,11 @@ async def serve_static_file(id: str, filename: str) -> FileResponse:
 
 
 @app.get("/settings/pool")
-async def get_settings_pool() -> List[Dict[str, str]]:
+async def get_settings_pool() -> List[Dict[str, Any]]:
     """Return the provider pool config with masked API keys.
     
     Returns:
-        List[Dict[str, str]]: Pool configurations.
+        List[Dict[str, Any]]: Pool configurations.
     """
     try:
         if SCRIPT_DIR not in sys.path:
@@ -633,6 +448,8 @@ async def get_settings_pool() -> List[Dict[str, str]]:
                 "masked_key": _mask_key(cfg.api_key),
                 "model_name": cfg.model_name,
                 "capability": cfg.capability,
+                "rpm_limit": cfg.rpm_limit,
+                "tpm_limit": cfg.tpm_limit,
             })
         return result
     except Exception as exc:
@@ -662,8 +479,11 @@ async def add_settings_pool_key(req: dict) -> Dict[str, bool]:
             endpoint_url=req.get("endpoint_url", ""),
             api_key=req.get("api_key", ""),
             model_name=req.get("model_name", ""),
-            capability=req.get("capability", "text")
+            capability=req.get("capability", "text"),
+            rpm_limit=req.get("rpm_limit"),
+            tpm_limit=req.get("tpm_limit"),
         )
+        cfg.validate()
         pool.configs.append(cfg)
         success = store_provider_pool(pool.to_json())
         return {"success": success}
@@ -699,21 +519,31 @@ async def delete_settings_pool_key(index: int) -> Dict[str, bool]:
         raise HTTPException(status_code=500, detail=f"Error deleting from pool: {exc}") from exc
 
 
-@app.get("/settings/health", response_model=HealthStatus)
-async def get_settings_health() -> HealthStatus:
-    """Check system health: Ollama, Playwright, Keyring.
-    
-    Returns:
-        HealthStatus: Status of various system components.
-    """
-    return HealthStatus(
-        ollama=_check_ollama(),
-        playwright=_check_playwright(),
-        keyring=_check_keyring(),
-    )
+@app.patch("/settings/pool/{index}/limits")
+async def update_settings_pool_limits(index: int, req: dict) -> Dict[str, bool]:
+    """Update only rate limits for a saved provider; credentials are untouched."""
+    try:
+        if SCRIPT_DIR not in sys.path:
+            sys.path.append(SCRIPT_DIR)
+        from src.credentials import get_provider_pool_or_legacy, store_provider_pool
+        pool = get_provider_pool_or_legacy()
+        if not (0 <= index < len(pool.configs)):
+            return {"success": False}
+        config = pool.configs[index]
+        config.rpm_limit = req.get("rpm_limit")
+        config.tpm_limit = req.get("tpm_limit")
+        config.validate()
+        return {"success": store_provider_pool(pool.to_json())}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logging.error(f"Error updating provider limits: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error updating provider limits: {exc}") from exc
+
 
 @app.get("/settings/youtube/status")
-async def get_youtube_status():
+async def get_youtube_status() -> Dict[str, bool]:
+    """Return YouTube authentication status."""
     try:
         from src.auth import load_credentials
         creds = load_credentials()
@@ -721,81 +551,45 @@ async def get_youtube_status():
     except Exception:
         return {"connected": False}
 
+
 @app.post("/settings/youtube/connect")
-def connect_youtube_endpoint():
+def connect_youtube_endpoint() -> Dict[str, bool]:
+    """Trigger YouTube OAuth login flow."""
     from src.auth import connect_youtube
     try:
-        creds = connect_youtube()
+        connect_youtube()
         return {"connected": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/settings/youtube/disconnect")
-async def disconnect_youtube_endpoint():
-    from src.auth import TOKEN_JSON_PATH, LEGACY_TOKEN_PICKLE_PATH
-    import os
-    if os.path.exists(TOKEN_JSON_PATH):
-        try: os.remove(TOKEN_JSON_PATH)
-        except OSError: pass
-    if os.path.exists(LEGACY_TOKEN_PICKLE_PATH):
-        try: os.remove(LEGACY_TOKEN_PICKLE_PATH)
-        except OSError: pass
+async def disconnect_youtube_endpoint() -> Dict[str, bool]:
+    """Disconnect YouTube integration."""
+    from src.auth import disconnect_youtube
+    disconnect_youtube()
     return {"connected": False}
+
 
 # ═══════════════════════════════════════════════════════════════════════
 #  PDF Endpoints
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def _convert_md_to_pdf(md_path: str, theme: str, pdf_path: str) -> None:
-    """Helper to convert a markdown file to a PDF."""
+@app.get("/settings/health", response_model=HealthStatus)
+async def get_settings_health() -> HealthStatus:
+    """Check system health: Ollama, Playwright, Keyring.
+    
+    Returns:
+        HealthStatus: Status of various system components.
+    """
     import asyncio
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
-    venv_site = os.path.join(SCRIPT_DIR, ".venv", "Lib", "site-packages")
-    if os.path.exists(venv_site) and venv_site not in sys.path:
-        sys.path.append(venv_site)
-
-    import markdown
-    from playwright.sync_api import sync_playwright
-
-    with open(md_path, "r", encoding="utf-8", errors="replace") as f:
-        md_content = f.read()
-
-    # Sanitize markdown: escape any raw script/iframe tags to prevent XSS before rendering
-    md_content = re.sub(r'<(/?(?:script|iframe|object|embed|applet|style)[^>]*)>', r'&lt;\1&gt;', md_content, flags=re.IGNORECASE)
-
-    html_body = markdown.markdown(md_content, extensions=["fenced_code", "tables"])
-    custom_css = _get_shared_pdf_css(theme)
-
-    html_content = (
-        "<!DOCTYPE html>"
-        "<html>"
-        "<head>"
-        "<meta charset=\"utf-8\">"
-        "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; img-src data: file:; script-src 'none'\">"
-        f"<style>{custom_css}</style>"
-        "</head>"
-        "<body>"
-        f"{html_body}"
-        "</body>"
-        "</html>"
+    ollama, playwright, keyring = await asyncio.gather(
+        asyncio.to_thread(_check_ollama),
+        asyncio.to_thread(_check_playwright),
+        asyncio.to_thread(_check_keyring),
     )
-
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html", encoding="utf-8") as f:
-        f.write(html_content)
-        temp_html = f.name
-
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(f"file://{temp_html}", wait_until="networkidle")
-            page.pdf(path=pdf_path, format="A4", print_background=True, prefer_css_page_size=True)
-            browser.close()
-    finally:
-        if os.path.exists(temp_html):
-            os.remove(temp_html)
+    return HealthStatus(ollama=ollama, playwright=playwright, keyring=keyring)
 
 
 @app.post("/pdf/export")

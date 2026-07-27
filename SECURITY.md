@@ -114,6 +114,9 @@ security-relevant components (the PO Token provider in particular) are
 disabled by default — updates require an explicit version bump and changelog
 entry in a release, not a silent `pip install -U` at runtime.
 
+The currently pinned PO Token provider version is
+`bgutil-ytdlp-pot-provider==1.3.1`.
+
 ---
 
 ## Explicit Non-Goals

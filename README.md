@@ -25,9 +25,19 @@ A powerful, automated tool for generating highly detailed, structured study note
 
 ## Installation
 
-### Prerequisites
+### End users (Windows release)
+
+Download the versioned `StudySuite-<version>-windows-x64.zip` from GitHub
+Releases, extract it, and double-click `StudySuite.exe`. The release includes
+Python, Node.js, the pinned PO Token provider, and the built frontend. No
+Python, Node, Git, npm, or terminal commands are required. Connect YouTube
+through OAuth and configure an LLM provider in Settings.
+
+### Developers
 - Windows 10/11
 - Python 3.10+
+- Node.js 22.14.0
+- Git
 
 ### Setup
 1. **Clone the repository:**
@@ -36,14 +46,18 @@ A powerful, automated tool for generating highly detailed, structured study note
    cd youtube-transcript-to-notes
    ```
 
-2. **Create a virtual environment and activate it:**
+2. **Run the pinned developer setup script (PowerShell):**
+   ```powershell
+   .\scripts\setup.ps1
+   ```
+
+   This creates `.venv`, installs exact Python dependencies, builds the PO
+   Token provider from source tag `1.3.1`, and builds the React frontend.
+
+   The equivalent manual setup remains available:
    ```bash
    python -m venv .venv
    .venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
    pip install -r requirements.txt
    ```
 
@@ -52,7 +66,7 @@ A powerful, automated tool for generating highly detailed, structured study note
 1. **Launch the App:**
    You can run the app via the provided launcher:
    ```bash
-   python launcher.py
+   .venv\Scripts\python.exe launcher.py --dev
    ```
    Alternatively, you can run the backend directly:
    ```bash

@@ -1,0 +1,37 @@
+.mermaid-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-xl);
+}
+
+.notes-selector {
+  margin-bottom: var(--space-lg);
+}
+
+.notes-select-input {
+  width: auto;
+  padding: var(--space-sm) var(--space-md);
+}
+
+.chat-header-title-wrapper {
+  display: flex;
+  gap: var(--space-md);
+  align-items: center;
+}
+
+.model-select-input {
+  width: auto;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.pdf-actions {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.success-text {
+  margin-left: var(--space-md);
+}

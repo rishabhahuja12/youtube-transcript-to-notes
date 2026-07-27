@@ -1,3 +1,6 @@
+"""
+LLM Provider API Pool and rate-limit configuration models.
+"""
 import json
 from dataclasses import dataclass, asdict
 
@@ -12,6 +15,8 @@ class ProviderConfig:
     api_key: str         # The API key (masked in logs)
     model_name: str      # e.g. "gemini-3.5-flash", "llama-3.3-70b"
     capability: str = "text"  # "text" or "vision"
+    rpm_limit: int | None = None
+    tpm_limit: int | None = None
 
     def validate(self):
         """Validate the provider configuration requirements."""
@@ -20,6 +25,10 @@ class ProviderConfig:
         self.endpoint_url = (self.endpoint_url or "").strip()
         self.model_name = (self.model_name or "").strip()
         self.api_key = (self.api_key or "").strip()
+        if self.rpm_limit is not None and self.rpm_limit <= 0:
+            raise ValueError("RPM limit must be a positive number.")
+        if self.tpm_limit is not None and self.tpm_limit <= 0:
+            raise ValueError("TPM limit must be a positive number.")
 
         if self.provider not in VALID_PROVIDERS:
             raise ValueError(f"Invalid provider: '{self.provider}'. Must be one of {VALID_PROVIDERS}")

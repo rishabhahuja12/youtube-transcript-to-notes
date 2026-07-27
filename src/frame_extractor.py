@@ -1,7 +1,10 @@
+"""
+Video download and keyframe extraction utilities for vision-enabled LLM pipelines.
+"""
 import os
 import re
 import urllib.request
-from typing import List, Dict
+from typing import List, Dict, Any
 
 def download_video(url: str, output_dir: str, resolution: str = "360p") -> str:
     """Download low-res video via yt-dlp.
@@ -31,7 +34,7 @@ def download_video(url: str, output_dir: str, resolution: str = "360p") -> str:
         filename = ydl.prepare_filename(info)
         return filename
 
-def extract_key_frames(video_path: str, output_dir: str, method: str = "scene_change", interval: int = 30) -> List[Dict]:
+def extract_key_frames(video_path: str, output_dir: str, method: str = "scene_change", interval: int = 30) -> List[Dict[str, Any]]:
     """Extract frames from video.
     
     Args:
@@ -41,7 +44,7 @@ def extract_key_frames(video_path: str, output_dir: str, method: str = "scene_ch
         interval (int, optional): The extraction interval in seconds. Defaults to 30.
         
     Returns:
-        List[Dict]: A list of dictionaries containing 'path' (str) and 'timestamp_sec' (int).
+        List[Dict[str, Any]]: A list of dictionaries containing 'path' (str) and 'timestamp_sec' (int).
     """
     import cv2
     os.makedirs(output_dir, exist_ok=True)
@@ -99,12 +102,12 @@ def extract_key_frames(video_path: str, output_dir: str, method: str = "scene_ch
     cap.release()
     return frames
 
-def assign_frames_to_chapters(frames: List[Dict], chapters: List[Dict]) -> Dict[int, List[str]]:
+def assign_frames_to_chapters(frames: List[Dict[str, Any]], chapters: List[Dict[str, Any]]) -> Dict[int, List[str]]:
     """Map frames to chapter indices by timestamp range.
     
     Args:
-        frames (List[Dict]): The list of extracted frames.
-        chapters (List[Dict]): The list of parsed chapters, sorted by time.
+        frames (List[Dict[str, Any]]): The list of extracted frames.
+        chapters (List[Dict[str, Any]]): The list of parsed chapters, sorted by time.
         
     Returns:
         Dict[int, List[str]]: A dictionary mapping chapter indices to a list of frame paths.

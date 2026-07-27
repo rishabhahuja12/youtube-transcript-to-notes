@@ -1,4 +1,7 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const browserApiOrigin = window.location.port !== '8000'
+  ? 'http://127.0.0.1:8000'
+  : window.location.origin;
+export const API_BASE_URL = import.meta.env.VITE_API_URL || browserApiOrigin;
 const WS_BASE_URL = API_BASE_URL.replace(/^http/, 'ws');
 
 export const fetchLibrary = async () => {
@@ -147,7 +150,16 @@ export const addPoolKey = async (payload) => {
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000)
   });
-  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  if (!response.ok) {
+    let message = `HTTP error! status: ${response.status}`;
+    try {
+      const data = await response.json();
+      message = data.detail || data.error || data.message || message;
+    } catch (e) {
+      // Keep the HTTP status when the server does not return JSON.
+    }
+    throw new Error(message);
+  }
   return await response.json();
 };
 
@@ -157,6 +169,20 @@ export const deletePoolKey = async (index) => {
     signal: AbortSignal.timeout(30000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+  return await response.json();
+};
+
+export const updateProviderLimits = async (index, limits) => {
+  const response = await fetch(`${API_BASE_URL}/api/settings/pool/${index}/limits`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(limits),
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || `HTTP error! status: ${response.status}`);
+  }
   return await response.json();
 };
 
@@ -229,7 +255,6 @@ export const disconnectYouTube = async () => {
     signal: AbortSignal.timeout(30000)
   });
   if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-  return await response.json();
   return await response.json();
 };
 

@@ -1,13 +1,18 @@
+"""
+Desktop Application Launcher for YT-Transcriptor.
+
+Launches the background FastAPI gateway and PyWebView GUI window.
+"""
 import os
 import sys
 import threading
 import time
 import argparse
 import subprocess
-import shutil
 
 import uvicorn
 import webview
+from runtime import RuntimeSetupError, start_pot_server, terminate_process
 
 # Path resolution
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,22 +69,12 @@ def start_services() -> list:
         )
         processes.append(p)
         
-    bgutil_cmd = shutil.which("bgutil-pot")
-    if not bgutil_cmd:
-        bgutil_cmd = "bgutil-pot.exe" if sys.platform == "win32" else "bgutil-pot"
-
     try:
-        p_pot = subprocess.Popen(
-            [bgutil_cmd or "bgutil-pot", "server"],
-            cwd=SCRIPT_DIR,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            encoding="utf-8",
-            errors="replace"
-        )
-        processes.append(p_pot)
-    except FileNotFoundError:
-        print("WARNING: bgutil-pot server binary not found. PO Token provider will not be active.")
+        processes.append(start_pot_server())
+    except Exception:
+        for process in reversed(processes):
+            terminate_process(process)
+        raise
         
     # Start the gateway in a thread so pywebview can run in the main thread
     gateway_thread = threading.Thread(target=start_backend, daemon=True)
@@ -97,34 +92,25 @@ def main() -> None:
     args = parser.parse_args()
 
     # Start backend services
-    processes = start_services()
-    
-    if args.dev:
-        print("Running in dev mode. Backend started on port 8000.")
-        print("Run `npm run dev` in the frontend/ folder to start the Vite server.")
-        try:
+    processes = []
+    try:
+        processes = start_services()
+        if args.dev:
+            print("Running in dev mode. Backend started on port 8000.")
+            print("Run `npm run dev` in the frontend/ folder to start the Vite server.")
             while True:
                 time.sleep(1)
-        except KeyboardInterrupt:
-            pass
-    else:
-        # Give services a moment to start
-        time.sleep(2)
-        
-        # Open pywebview
-        window = webview.create_window(
-            "YT Transcriptor - AI Study Suite",
-            "http://localhost:8000",
-            width=1200,
-            height=800,
-            min_size=(800, 600)
-        )
-        
-        webview.start(private_mode=True)
-
-    # Cleanup subprocesses
-    for p in processes:
-        p.terminate()
+        else:
+            time.sleep(2)
+            webview.create_window("YT Transcriptor - AI Study Suite", "http://localhost:8000", width=1200, height=800, min_size=(800, 600))
+            webview.start(private_mode=True)
+    except KeyboardInterrupt:
+        pass
+    except RuntimeSetupError as exc:
+        print(f"SETUP ERROR: {exc}", file=sys.stderr)
+    finally:
+        for process in reversed(processes):
+            terminate_process(process)
 
 if __name__ == "__main__":
     main()

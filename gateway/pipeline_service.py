@@ -1,3 +1,7 @@
+"""
+FastAPI microservice for pipeline execution and WebSocket streaming telemetry.
+Runs on Port 8001.
+"""
 import asyncio
 import logging
 import os
@@ -11,6 +15,8 @@ from pydantic import BaseModel
 from src.pipeline import run_pipeline, run_pipeline_from_data
 from src.provider_pool import ProviderPool
 from src.credentials import get_provider_pool_or_legacy
+from src.hooks import get_hook_manager
+from src.library import add_library_entry, detect_badges
 from gateway.pipeline_jobs import job_manager, PipelineJob
 
 app = FastAPI(title="Pipeline Service", description="Handles pipeline execution", version="1.0.0")
@@ -75,28 +81,37 @@ async def broadcast_message(job: PipelineJob, message: dict) -> None:
             job.subscribers.remove(ws)
 
 def get_on_log_callback(job: PipelineJob, loop: asyncio.AbstractEventLoop) -> Callable[[str], None]:
+    """Create a log callback that broadcasts log messages over WebSocket."""
     def on_log(message: str) -> None:
         msg = {"type": "log", "level": "info", "message": message}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     return on_log
 
 def get_on_progress_callback(job: PipelineJob, loop: asyncio.AbstractEventLoop) -> Callable[[int, int], None]:
+    """Create a progress callback that broadcasts progress updates over WebSocket."""
     def on_progress(current: int, total: int, step: str = "Processing...") -> None:
         msg = {"type": "progress", "current": current, "total": total}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     return on_progress
     
 def get_on_phase_callback(job: PipelineJob, loop: asyncio.AbstractEventLoop) -> Callable[[str, str], None]:
+    """Create a phase callback that broadcasts phase status changes over WebSocket."""
     def on_phase(phase: str, status: str) -> None:
         msg = {"type": "phase", "phase": phase, "status": status}
         asyncio.run_coroutine_threadsafe(broadcast_message(job, msg), loop)
     return on_phase
 
 def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: ProviderPool, loop: asyncio.AbstractEventLoop) -> None:
+    """Execute pipeline processing in a background worker thread."""
     try:
         on_log = get_on_log_callback(job, loop)
         on_progress = get_on_progress_callback(job, loop)
         on_phase = get_on_phase_callback(job, loop)
+        
+        hook_mgr = get_hook_manager()
+        hook_mgr.register("on_log", on_log)
+        hook_mgr.register("on_progress", on_progress)
+        hook_mgr.register("on_phase", on_phase)
         
         if request.is_url_pipeline and request.youtube_url:
             on_log("Fetching YouTube data...")
@@ -168,11 +183,10 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
         success = result.get("success", False)
         course_record = None
         if success and course_path and os.path.isdir(course_path):
-            from gateway.content_service import _add_library_entry, _detect_badges
             import uuid
             from datetime import datetime
             
-            badges = _detect_badges(course_path)
+            badges = detect_badges(course_path)
             title = request.video_title
             if not title or title == "Course":
                 title = os.path.basename(course_path) or course_path
@@ -186,7 +200,7 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
                 "created_at": datetime.utcnow().isoformat() + "Z"
             }
             
-            course_record = _add_library_entry(entry_data)
+            course_record = add_library_entry(entry_data)
             result["course_record"] = course_record
         
         job_manager.finalize_job(job, status, result)
@@ -202,6 +216,14 @@ def pipeline_worker(job: PipelineJob, request: PipelineStartRequest, pool: Provi
 
 @router.post("/start", response_model=PipelineResponse)
 async def start_pipeline(request: PipelineStartRequest) -> PipelineResponse:
+    """Start a new pipeline generation job in a background worker thread.
+
+    Args:
+        request: Pipeline configuration request parameters.
+
+    Returns:
+        PipelineResponse: Job ID and initial status response.
+    """
     try:
         new_job = job_manager.create_job()
     except RuntimeError as e:
@@ -227,6 +249,14 @@ async def start_pipeline(request: PipelineStartRequest) -> PipelineResponse:
 
 @router.post("/{job_id}/cancel", response_model=PipelineResponse)
 async def cancel_pipeline(job_id: str) -> PipelineResponse:
+    """Request graceful cancellation of a running pipeline job.
+
+    Args:
+        job_id: Pipeline job string identifier.
+
+    Returns:
+        PipelineResponse: Cancellation request status.
+    """
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -239,6 +269,12 @@ async def cancel_pipeline(job_id: str) -> PipelineResponse:
 
 @router.websocket("/stream/{job_id}")
 async def websocket_endpoint(websocket: WebSocket, job_id: str) -> None:
+    """Stream live logs, progress updates, and terminal events over WebSocket.
+
+    Args:
+        websocket: FastApi WebSocket instance.
+        job_id: Pipeline job string identifier.
+    """
     job = job_manager.get_job(job_id)
     if not job:
         await websocket.close(code=4004, reason="Job not found")

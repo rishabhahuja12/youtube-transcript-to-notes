@@ -1,3 +1,6 @@
+"""
+YouTube Data API v3 OAuth2 Authentication and credential persistence.
+"""
 import os
 import json
 import pickle
@@ -7,6 +10,7 @@ from typing import Any, Dict, Optional
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from runtime import application_root
 
 
 STUDYSUITE_DIR = os.path.join(os.path.expanduser("~"), ".studysuite")
@@ -21,7 +25,7 @@ def connect_youtube() -> Any:
     Returns:
         Any: Google OAuth credentials object.
     """
-    secret_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'client_secret.json')
+    secret_path = str(application_root() / 'client_secret.json')
     flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
     creds = flow.run_local_server(port=0)
     
@@ -107,3 +111,22 @@ def get_video_metadata(video_id: str, creds: Any) -> Dict[str, Any]:
         'duration': duration, 
         'description': description
     }
+
+
+def disconnect_youtube() -> bool:
+    """Disconnect YouTube by removing stored OAuth token files.
+
+    Returns:
+        bool: True if cleanup attempted without critical error.
+    """
+    if os.path.exists(TOKEN_JSON_PATH):
+        try:
+            os.remove(TOKEN_JSON_PATH)
+        except OSError:
+            pass
+    if os.path.exists(LEGACY_TOKEN_PICKLE_PATH):
+        try:
+            os.remove(LEGACY_TOKEN_PICKLE_PATH)
+        except OSError:
+            pass
+    return True

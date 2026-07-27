@@ -1,8 +1,13 @@
+"""
+YouTube transcript fetching and video metadata extraction utilities.
+"""
 import re
 import os
 import httpx
 import yt_dlp
 from src.auth import load_credentials, get_video_metadata
+from runtime import POT_BASE_URL, resolve_node
+
 
 def extract_video_id(url: str) -> str:
     """Extract YouTube video ID from various URL formats.
@@ -41,7 +46,10 @@ def get_transcript(url: str) -> list:
         'writesubtitles': True,
         'writeautomaticsub': True,
         'subtitleslangs': ['en'],
-        'js_runtimes': {'node': {'path': 'C:/Program Files/nodejs/node.exe'}},
+        'js_runtimes': {'node': {'path': resolve_node()}},
+        'extractor_args': {
+            'youtubepot-bgutilhttp': {'base_url': [POT_BASE_URL]},
+        },
         'quiet': True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PowerUpCard from '../components/PowerUpCard';
 import { useAppContext } from '../context/AppContext';
-import { startPipeline, cancelPipeline, connectPipelineWebSocket, browseDirectory, browseFile, fetchPoolSettings, fetchOllamaStatus } from '../utils/api';
+import { startPipeline, cancelPipeline, connectPipelineWebSocket, browseDirectory, browseFile, fetchPoolSettings, fetchOllamaStatus, fetchYouTubeStatus } from '../utils/api';
 import { Video, Folder, Rocket, AlertCircle, Camera, Share2, FileText, Play, Check, File } from 'lucide-react';
 
 const extractVideoId = (url) => {
   if (!url) return null;
-  const match = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  const match = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
   return match ? match[1] : null;
 };
 
@@ -33,7 +33,12 @@ const NewPipeline = () => {
   
   const { activeJobId, setActiveJobId } = useAppContext();
   const [pipelinePhase, setPipelinePhase] = useState(null);
+  const [thumbError, setThumbError] = useState(false);
   
+  useEffect(() => {
+    setThumbError(false);
+  }, [url]);
+
   useEffect(() => {
     return () => {
       if (wsRef.current) wsRef.current.close();
@@ -52,9 +57,7 @@ const NewPipeline = () => {
 
   const [youtubeStatus, setYoutubeStatus] = React.useState(false);
   React.useEffect(() => {
-    import('../utils/api').then(({fetchYouTubeStatus}) => {
-      fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
-    });
+    fetchYouTubeStatus().then(res => setYoutubeStatus(res.connected)).catch(() => {});
   }, []);
 
   const handleBrowseDir = async () => {
@@ -319,15 +322,14 @@ const NewPipeline = () => {
               {inputType === 'youtube' && url && extractVideoId(url) ? (
                 <div className="preview-panel filled-panel">
                   <div className="preview-thumbnail">
-                    <img 
-                      src={`https://img.youtube.com/vi/${extractVideoId(url)}/maxresdefault.jpg`} 
-                      alt="Thumbnail" 
-                      onError={(e) => { 
-                        e.target.style.display='none'; 
-                        e.target.nextSibling.style.display='flex'; 
-                      }} 
-                    />
-                    <div className="play-placeholder">
+                    {!thumbError && (
+                      <img 
+                        src={`https://img.youtube.com/vi/${extractVideoId(url)}/maxresdefault.jpg`} 
+                        alt="Thumbnail" 
+                        onError={() => setThumbError(true)} 
+                      />
+                    )}
+                    <div className={`play-placeholder ${thumbError ? 'visible' : ''}`}>
                       <Play size={24} />
                     </div>
                     <div className="duration-badge mono-text">0:00</div>
@@ -383,7 +385,7 @@ const NewPipeline = () => {
                </div>
             )}
             {pipelineStatus === 'running' && (
-               <button type="button" onClick={handleCancel} className="secondary-button" style={{marginRight: '1rem'}}>
+               <button type="button" onClick={handleCancel} className="secondary-button cancel-pipeline-button">
                   Cancel Pipeline
                </button>
             )}
