@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchOllamaStatus, fetchPoolSettings, addPoolKey, deletePoolKey, updateProviderLimits, fetchYouTubeStatus, connectYouTube, disconnectYouTube } from '../utils/api';
-import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, PlayCircle, Sliders, Check, X, RotateCcw, Zap } from 'lucide-react';
+import { Settings as SettingsIcon, Server, Shield, Database, Key, Activity, Trash2, Plus, PlayCircle, Sliders, Check, X, RotateCcw, Zap, RefreshCw } from 'lucide-react';
 import HealthCard from '../components/HealthCard';
 import './Settings.css';
 
