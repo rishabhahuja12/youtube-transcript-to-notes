@@ -108,7 +108,12 @@ const Settings = () => {
     try {
       setIsConnectingYt(true);
       setError(null);
-      await connectYouTube();
+      const res = await connectYouTube();
+      // Backend tries to open browser via os.startfile, but as a safety net
+      // the frontend also opens the auth URL if provided
+      if (res && res.auth_url) {
+        window.open(res.auth_url, '_blank');
+      }
     } catch (err) {
       console.error(err);
       setError('Failed to start YouTube connection: ' + (err.message || 'Error triggering login'));

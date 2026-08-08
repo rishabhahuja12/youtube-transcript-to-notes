@@ -813,14 +813,24 @@ def connect_youtube_endpoint() -> Dict[str, Any]:
     t = threading.Thread(target=_wait_for_callback, daemon=True)
     t.start()
 
-    # Open browser from the main process (not the background thread)
+    # Open browser using Windows-native os.startfile (works reliably from subprocesses)
     try:
-        webbrowser.open(auth_url)
-        print(f"[YT-OAUTH] Browser opened with auth URL", flush=True, file=sys.stderr)
+        import os as _os
+        import subprocess as _sp
+        import platform
+        if platform.system() == 'Windows':
+            _os.startfile(auth_url)
+        else:
+            _sp.Popen(['xdg-open', auth_url], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        print(f"[YT-OAUTH] Browser opened via os.startfile", flush=True, file=sys.stderr)
     except Exception as exc:
-        print(f"[YT-OAUTH] Failed to open browser: {exc}", flush=True, file=sys.stderr)
+        print(f"[YT-OAUTH] os.startfile failed: {exc}, trying webbrowser...", flush=True, file=sys.stderr)
+        try:
+            webbrowser.open(auth_url)
+        except Exception:
+            pass
 
-    return {"connected": False, "status": "authenticating"}
+    return {"connected": False, "status": "authenticating", "auth_url": auth_url}
 
 
 @app.post("/settings/youtube/disconnect")
