@@ -23,34 +23,36 @@ import threading
 import logging
 import webbrowser
 
-_oauth_lock = threading.Lock()
-
 def connect_youtube() -> Any:
     """Connect to YouTube API using OAuth and save credentials.
+    
+    Launches a local server on a random port, opens Google OAuth in the
+    default browser, waits for the user to authorize, then saves credentials.
     
     Returns:
         Any: Google OAuth credentials object.
     """
-    with _oauth_lock:
-        disconnect_youtube()
-        secret_path = str(application_root() / 'client_secret.json')
-        flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
-        creds = flow.run_local_server(
-            host='localhost',
-            port=8089,
-            authorization_prompt_message='Please complete Google OAuth authorization in your browser.',
-            success_message='Authorization successful! You may close this browser tab.',
-            open_browser=True,
-            prompt='consent',
-            access_type='offline'
-        )
-        
-        os.makedirs(STUDYSUITE_DIR, exist_ok=True)
-        fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            f.write(creds.to_json())
-        os.replace(temp_path, TOKEN_JSON_PATH)
-        return creds
+    disconnect_youtube()
+    secret_path = str(application_root() / 'client_secret.json')
+    logging.info(f"Starting YouTube OAuth flow, client_secret: {secret_path}")
+    flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
+    creds = flow.run_local_server(
+        host='localhost',
+        port=0,
+        authorization_prompt_message='Please complete Google OAuth authorization in your browser.',
+        success_message='Authorization successful! You may close this browser tab.',
+        open_browser=True,
+        prompt='consent',
+        access_type='offline'
+    )
+    logging.info("YouTube OAuth flow completed, saving credentials.")
+    os.makedirs(STUDYSUITE_DIR, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        f.write(creds.to_json())
+    os.replace(temp_path, TOKEN_JSON_PATH)
+    logging.info(f"YouTube credentials saved to {TOKEN_JSON_PATH}")
+    return creds
 
 def load_credentials() -> Optional[Any]:
     """Load saved YouTube API credentials from file, refreshing if necessary.

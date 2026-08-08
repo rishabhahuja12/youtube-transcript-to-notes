@@ -752,23 +752,74 @@ async def get_youtube_status() -> Dict[str, bool]:
         return {"connected": False}
 
 
-import threading
-_yt_thread_lock = threading.Lock()
-
 @app.post("/settings/youtube/connect")
 def connect_youtube_endpoint() -> Dict[str, Any]:
-    """Trigger YouTube OAuth login flow in a background daemon thread."""
-    from src.auth import connect_youtube
+    """Trigger YouTube OAuth login flow.
+    
+    Opens a local callback server in a background thread, generates the auth URL,
+    opens the browser from the main process, and returns immediately.
+    """
+    import threading
+    import sys
+    import webbrowser
+    import wsgiref.simple_server
+    from src.auth import (
+        SCOPES, STUDYSUITE_DIR, TOKEN_JSON_PATH,
+        disconnect_youtube
+    )
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from runtime import application_root
 
-    def _do_connect():
-        with _yt_thread_lock:
-            try:
-                connect_youtube()
-            except Exception as exc:
-                logging.warning(f"YouTube connect failed: {exc}")
+    disconnect_youtube()
+    secret_path = str(application_root() / 'client_secret.json')
+    flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
 
-    t = threading.Thread(target=_do_connect, daemon=True)
+    # Bind a local server on a random port to receive the OAuth callback
+    wsgiref.simple_server.WSGIServer.allow_reuse_address = False
+    from google_auth_oauthlib.flow import _RedirectWSGIApp, _WSGIRequestHandler
+    success_message = 'Authorization successful! You may close this browser tab.'
+    wsgi_app = _RedirectWSGIApp(success_message)
+    local_server = wsgiref.simple_server.make_server(
+        'localhost', 0, wsgi_app, handler_class=_WSGIRequestHandler
+    )
+    port = local_server.server_port
+    flow.redirect_uri = f"http://localhost:{port}/"
+    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
+
+    print(f"[YT-OAUTH] Server bound on port {port}, auth_url generated", flush=True, file=sys.stderr)
+
+    def _wait_for_callback():
+        try:
+            print(f"[YT-OAUTH] Waiting for OAuth callback on port {port}...", flush=True, file=sys.stderr)
+            local_server.handle_request()
+            authorization_response = wsgi_app.last_request_uri.replace("http", "https")
+            flow.fetch_token(authorization_response=authorization_response)
+            creds = flow.credentials
+            if creds:
+                import os, tempfile
+                os.makedirs(STUDYSUITE_DIR, exist_ok=True)
+                fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(creds.to_json())
+                os.replace(temp_path, TOKEN_JSON_PATH)
+                print(f"[YT-OAUTH] Credentials saved to {TOKEN_JSON_PATH}", flush=True, file=sys.stderr)
+        except Exception as exc:
+            import traceback
+            print(f"[YT-OAUTH] Callback handler FAILED: {exc}", flush=True, file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+        finally:
+            local_server.server_close()
+
+    t = threading.Thread(target=_wait_for_callback, daemon=True)
     t.start()
+
+    # Open browser from the main process (not the background thread)
+    try:
+        webbrowser.open(auth_url)
+        print(f"[YT-OAUTH] Browser opened with auth URL", flush=True, file=sys.stderr)
+    except Exception as exc:
+        print(f"[YT-OAUTH] Failed to open browser: {exc}", flush=True, file=sys.stderr)
+
     return {"connected": False, "status": "authenticating"}
 
 
