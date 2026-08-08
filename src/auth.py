@@ -39,12 +39,15 @@ def start_youtube_oauth() -> str:
     def _run_server():
         with _oauth_lock:
             try:
+                disconnect_youtube()
                 creds = flow.run_local_server(
                     host='localhost',
                     port=8089,
                     authorization_prompt_message='Please complete Google OAuth in your browser.',
                     success_message='Authorization successful! You may close this window.',
-                    open_browser=False
+                    open_browser=False,
+                    prompt='consent',
+                    access_type='offline'
                 )
                 if creds:
                     os.makedirs(STUDYSUITE_DIR, exist_ok=True)
@@ -79,7 +82,9 @@ def connect_youtube() -> Any:
         port=0,
         authorization_prompt_message='Please complete Google OAuth authorization in your browser.',
         success_message='Authorization successful! You may close this browser tab.',
-        open_browser=True
+        open_browser=True,
+        prompt='consent',
+        access_type='offline'
     )
     
     os.makedirs(STUDYSUITE_DIR, exist_ok=True)
@@ -101,6 +106,7 @@ def load_credentials() -> Optional[Any]:
         try:
             creds = Credentials.from_authorized_user_file(TOKEN_JSON_PATH, SCOPES)
         except Exception:
+            disconnect_youtube()
             return None
     elif os.path.exists(LEGACY_TOKEN_PICKLE_PATH):
         try:
@@ -114,20 +120,31 @@ def load_credentials() -> Optional[Any]:
                 os.replace(temp_path, TOKEN_JSON_PATH)
                 os.remove(LEGACY_TOKEN_PICKLE_PATH)
         except Exception:
+            disconnect_youtube()
             return None
             
     if not creds:
         return None
         
-    if creds.expired and creds.refresh_token:
-        try:
-            creds.refresh(Request())
-            fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(creds.to_json())
-            os.replace(temp_path, TOKEN_JSON_PATH)
-        except Exception:
+    if creds.expired:
+        if creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+                with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                    f.write(creds.to_json())
+                os.replace(temp_path, TOKEN_JSON_PATH)
+            except Exception as exc:
+                logging.warning(f"Failed to refresh YouTube credentials: {exc}")
+                disconnect_youtube()
+                return None
+        else:
+            disconnect_youtube()
             return None
+
+    if not creds.valid:
+        disconnect_youtube()
+        return None
             
     return creds
 

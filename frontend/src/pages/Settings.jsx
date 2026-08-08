@@ -97,7 +97,7 @@ const Settings = () => {
             setIsConnectingYt(false);
           }
         } catch (e) {}
-      }, 3000);
+      }, 2000);
     }
     return () => {
       if (pollTimer) clearInterval(pollTimer);
