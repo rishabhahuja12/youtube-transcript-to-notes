@@ -165,14 +165,12 @@ def run_pipeline(
         if enable_multimodal and youtube_url:
             try:
                 on_log("Step 2.5: Downloading video and extracting frames...")
-                from src.frame_extractor import download_video, extract_key_frames, assign_frames_to_chapters
+                from src.frame_extractor import download_video, extract_key_frames
                 frames_dir = os.path.join(course_dir, "frames")
-                video_path = download_video(youtube_url, frames_dir)
-                on_log(f"Video downloaded to {video_path}, extracting frames...")
-                frames = extract_key_frames(video_path, frames_dir)
-                on_log(f"Extracted {len(frames)} frames. Assigning to chapters...")
-                chapter_frames = assign_frames_to_chapters(frames, chapters)
-                on_log("Frame extraction and assignment complete.")
+                video_path = download_video(youtube_url, frames_dir, cancel_event=cancel_event)
+                on_log(f"Video downloaded to {video_path}, extracting smart frames...")
+                chapter_frames = extract_key_frames(video_path, frames_dir, chapters, cancel_event=cancel_event)
+                on_log("Frame extraction complete.")
                 # Clean up video file to save disk space
                 try:
                     os.remove(video_path)
@@ -272,14 +270,12 @@ def run_pipeline_from_data(
         if enable_multimodal and youtube_url:
             try:
                 on_log("Step 2.5: Downloading video and extracting frames...")
-                from src.frame_extractor import download_video, extract_key_frames, assign_frames_to_chapters
+                from src.frame_extractor import download_video, extract_key_frames
                 frames_dir = os.path.join(course_dir, "frames")
-                video_path = download_video(youtube_url, frames_dir)
-                on_log(f"Video downloaded to {video_path}, extracting frames...")
-                frames = extract_key_frames(video_path, frames_dir)
-                on_log(f"Extracted {len(frames)} frames. Assigning to chapters...")
-                chapter_frames = assign_frames_to_chapters(frames, chapters)
-                on_log("Frame extraction and assignment complete.")
+                video_path = download_video(youtube_url, frames_dir, cancel_event=cancel_event)
+                on_log(f"Video downloaded to {video_path}, extracting smart frames...")
+                chapter_frames = extract_key_frames(video_path, frames_dir, chapters, cancel_event=cancel_event)
+                on_log("Frame extraction complete.")
                 try:
                     os.remove(video_path)
                 except OSError as e:
