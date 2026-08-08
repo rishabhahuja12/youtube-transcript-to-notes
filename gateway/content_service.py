@@ -752,15 +752,24 @@ async def get_youtube_status() -> Dict[str, bool]:
         return {"connected": False}
 
 
+import threading
+_yt_thread_lock = threading.Lock()
+
 @app.post("/settings/youtube/connect")
 def connect_youtube_endpoint() -> Dict[str, Any]:
-    """Trigger non-blocking YouTube OAuth login flow and return auth URL."""
-    from src.auth import start_youtube_oauth
-    try:
-        url = start_youtube_oauth()
-        return {"connected": False, "auth_url": url}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Trigger YouTube OAuth login flow in a background daemon thread."""
+    from src.auth import connect_youtube
+
+    def _do_connect():
+        with _yt_thread_lock:
+            try:
+                connect_youtube()
+            except Exception as exc:
+                logging.warning(f"YouTube connect failed: {exc}")
+
+    t = threading.Thread(target=_do_connect, daemon=True)
+    t.start()
+    return {"connected": False, "status": "authenticating"}
 
 
 @app.post("/settings/youtube/disconnect")

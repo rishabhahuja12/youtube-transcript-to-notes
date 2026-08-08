@@ -25,74 +25,32 @@ import webbrowser
 
 _oauth_lock = threading.Lock()
 
-def start_youtube_oauth() -> str:
-    """Generate Google OAuth authorization URL and listen for callback in a daemon thread.
-    
-    Returns:
-        str: Google authorization URL to open in browser.
-    """
-    secret_path = str(application_root() / 'client_secret.json')
-    flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
-    flow.redirect_uri = "http://localhost:8089/"
-    auth_url, _ = flow.authorization_url(prompt='consent', access_type='offline')
-
-    def _run_server():
-        with _oauth_lock:
-            try:
-                disconnect_youtube()
-                creds = flow.run_local_server(
-                    host='localhost',
-                    port=8089,
-                    authorization_prompt_message='Please complete Google OAuth in your browser.',
-                    success_message='Authorization successful! You may close this window.',
-                    open_browser=False,
-                    prompt='consent',
-                    access_type='offline'
-                )
-                if creds:
-                    os.makedirs(STUDYSUITE_DIR, exist_ok=True)
-                    fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
-                    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                        f.write(creds.to_json())
-                    os.replace(temp_path, TOKEN_JSON_PATH)
-            except Exception as exc:
-                logging.warning(f"OAuth server thread exception: {exc}")
-
-    t = threading.Thread(target=_run_server, daemon=True)
-    t.start()
-
-    try:
-        webbrowser.open(auth_url)
-    except Exception:
-        pass
-
-    return auth_url
-
-
 def connect_youtube() -> Any:
     """Connect to YouTube API using OAuth and save credentials.
     
     Returns:
         Any: Google OAuth credentials object.
     """
-    secret_path = str(application_root() / 'client_secret.json')
-    flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
-    creds = flow.run_local_server(
-        host='localhost',
-        port=0,
-        authorization_prompt_message='Please complete Google OAuth authorization in your browser.',
-        success_message='Authorization successful! You may close this browser tab.',
-        open_browser=True,
-        prompt='consent',
-        access_type='offline'
-    )
-    
-    os.makedirs(STUDYSUITE_DIR, exist_ok=True)
-    fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
-    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-        f.write(creds.to_json())
-    os.replace(temp_path, TOKEN_JSON_PATH)
-    return creds
+    with _oauth_lock:
+        disconnect_youtube()
+        secret_path = str(application_root() / 'client_secret.json')
+        flow = InstalledAppFlow.from_client_secrets_file(secret_path, SCOPES)
+        creds = flow.run_local_server(
+            host='localhost',
+            port=8089,
+            authorization_prompt_message='Please complete Google OAuth authorization in your browser.',
+            success_message='Authorization successful! You may close this browser tab.',
+            open_browser=True,
+            prompt='consent',
+            access_type='offline'
+        )
+        
+        os.makedirs(STUDYSUITE_DIR, exist_ok=True)
+        fd, temp_path = tempfile.mkstemp(dir=STUDYSUITE_DIR)
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(creds.to_json())
+        os.replace(temp_path, TOKEN_JSON_PATH)
+        return creds
 
 def load_credentials() -> Optional[Any]:
     """Load saved YouTube API credentials from file, refreshing if necessary.

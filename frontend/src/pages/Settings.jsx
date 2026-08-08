@@ -108,16 +108,10 @@ const Settings = () => {
     try {
       setIsConnectingYt(true);
       setError(null);
-      const res = await connectYouTube();
-      if (res && res.auth_url) {
-        window.open(res.auth_url, '_blank');
-      } else if (res && res.connected) {
-        setYoutubeConnected(true);
-        setIsConnectingYt(false);
-      }
+      await connectYouTube();
     } catch (err) {
       console.error(err);
-      setError('Failed to connect YouTube: ' + (err.message || 'OAuth prompt cancelled'));
+      setError('Failed to start YouTube connection: ' + (err.message || 'Error triggering login'));
       setIsConnectingYt(false);
     }
   };
