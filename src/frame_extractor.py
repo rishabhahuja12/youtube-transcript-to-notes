@@ -23,7 +23,8 @@ def download_video(url: str, output_dir: str, resolution: str = "360p") -> str:
     outtmpl = os.path.join(output_dir, _slugify("video") + ".%(ext)s")
     
     ydl_opts = {
-        'format': f'bestvideo[height<={resolution.replace("p", "")}]+bestaudio/best',
+        # Only download video (no audio) to save bandwidth and bypass ffmpeg merge requirements
+        'format': f'bestvideo[ext=mp4][height<={resolution.replace("p", "")}]/bestvideo[height<={resolution.replace("p", "")}]',
         'outtmpl': outtmpl,
         'quiet': True,
         'no_warnings': True,
