@@ -3,8 +3,17 @@ import { fetchOllamaStatus } from '../utils/api';
 
 const AppContext = createContext();
 
+const getInitialScreen = () => {
+  const path = window.location.pathname.replace(/^\/+/, '');
+  const validScreens = ['library', 'newPipeline', 'settings', 'utilities'];
+  if (validScreens.includes(path)) {
+    return path;
+  }
+  return 'newPipeline';
+};
+
 const initialState = {
-  currentScreen: 'newPipeline',
+  currentScreen: getInitialScreen(),
   activeCourseDir: null,
   activeJobId: null,
   pipelineStatus: 'idle',
@@ -39,8 +48,22 @@ export const AppProvider = ({ children }) => {
       }
     };
     checkStatus();
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\/+/, '');
+      const validScreens = ['library', 'newPipeline', 'settings', 'utilities'];
+      if (validScreens.includes(path)) {
+        dispatch({ type: 'SET_SCREEN', payload: path });
+      } else {
+        dispatch({ type: 'SET_SCREEN', payload: 'newPipeline' });
+      }
+    };
+    
+    window.addEventListener('popstate', handlePopState);
     const interval = setInterval(checkStatus, 15000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
   const addLog = useCallback((message, type = 'info') => {
@@ -53,7 +76,10 @@ export const AppProvider = ({ children }) => {
     });
   }, []);
 
-  const setCurrentScreen = useCallback((val) => dispatch({ type: 'SET_SCREEN', payload: val }), []);
+  const setCurrentScreen = useCallback((val) => {
+    dispatch({ type: 'SET_SCREEN', payload: val });
+    window.history.pushState({}, '', `/${val}`);
+  }, []);
   const setActiveCourseDir = useCallback((val) => dispatch({ type: 'SET_COURSE_DIR', payload: val }), []);
   const setActiveJobId = useCallback((val) => dispatch({ type: 'SET_ACTIVE_JOB_ID', payload: val }), []);
   const setPipelineStatus = useCallback((val) => dispatch({ type: 'SET_PIPELINE_STATUS', payload: val }), []);
